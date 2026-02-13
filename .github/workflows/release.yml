@@ -1,0 +1,132 @@
+name: Build & Upload Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  ONNX_VERSION: "1.23.0"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            artifact: ctxovrflw-linux-x64
+            onnx_arch: linux-x64
+            onnx_ext: tgz
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04
+            artifact: ctxovrflw-linux-arm64
+            onnx_arch: linux-aarch64
+            onnx_ext: tgz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: ctxovrflw-darwin-x64
+            onnx_arch: osx-x86_64
+            onnx_ext: tgz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: ctxovrflw-darwin-arm64
+            onnx_arch: osx-arm64
+            onnx_ext: tgz
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Download ONNX Runtime
+        run: |
+          curl -L -o onnxruntime.${{ matrix.onnx_ext }} \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-${{ matrix.onnx_arch }}-${{ env.ONNX_VERSION }}.${{ matrix.onnx_ext }}"
+          mkdir -p onnxruntime
+          tar xzf onnxruntime.${{ matrix.onnx_ext }} -C onnxruntime
+          # Flatten if nested (some archives have a top-level dir)
+          if [ ! -d onnxruntime/lib ]; then
+            mv onnxruntime/onnxruntime-*/lib onnxruntime/lib
+            mv onnxruntime/onnxruntime-*/include onnxruntime/include 2>/dev/null || true
+          fi
+          echo "ONNX runtime contents:"
+          find onnxruntime/lib -type f | head -10
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: |
+          if [[ "${{ matrix.os }}" == macos-* ]]; then
+            export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'libonnxruntime*.dylib' -not -name '*1.23*' | head -1)"
+          else
+            export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'libonnxruntime.so' | head -1)"
+          fi
+          echo "ORT_DYLIB_PATH=$ORT_DYLIB_PATH"
+          ls -la "$ORT_DYLIB_PATH"
+          cargo build --release --features onnx --target ${{ matrix.target }}
+
+      - name: Download ONNX model
+        run: |
+          mkdir -p models
+          curl -fsSL -o models/all-MiniLM-L6-v2-q8.onnx \
+            "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx"
+          curl -fsSL -o models/tokenizer.json \
+            "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+
+      - name: Package
+        run: |
+          mkdir -p dist/models
+          cp target/${{ matrix.target }}/release/ctxovrflw dist/
+          # Include ONNX runtime lib — find it regardless of exact path
+          find onnxruntime -name "libonnxruntime*.dylib" -exec cp {} dist/ \; 2>/dev/null || true
+          find onnxruntime -name "libonnxruntime.so*" -exec cp {} dist/ \; 2>/dev/null || true
+          # Verify we got the lib
+          ls -la dist/libonnx* || echo "WARNING: No ONNX runtime lib found!"
+          # Include ONNX model + tokenizer
+          cp models/all-MiniLM-L6-v2-q8.onnx dist/models/
+          cp models/tokenizer.json dist/models/
+          tar czf ${{ matrix.artifact }}.tar.gz -C dist .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+  upload:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Upload to API
+        env:
+          UPLOAD_KEY: ${{ secrets.RELEASE_UPLOAD_KEY }}
+          API_URL: https://api.ctxovrflw.dev
+        run: |
+          VERSION="${GITHUB_REF_NAME:-dev}"
+          for dir in artifacts/*/; do
+            file=$(find "$dir" -name "*.tar.gz" | head -1)
+            name=$(basename "$file" .tar.gz)
+            echo "Uploading $name..."
+            curl -f -X PUT \
+              -H "Authorization: Bearer $UPLOAD_KEY" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@$file" \
+              "$API_URL/v1/releases/$VERSION/$name"
+          done

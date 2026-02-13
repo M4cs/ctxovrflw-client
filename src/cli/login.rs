@@ -1,0 +1,419 @@
+use anyhow::Result;
+use crate::config::Config;
+use crate::crypto;
+
+#[derive(serde::Deserialize)]
+struct AuthResponse {
+    #[allow(dead_code)]
+    user_id: String,
+    api_key: String,
+}
+
+#[derive(serde::Deserialize)]
+struct DeviceCodeResponse {
+    device_code: String,
+    user_code: String,
+    verification_url: String,
+    expires_in: u64,
+    interval: u64,
+}
+
+#[derive(serde::Deserialize)]
+struct DeviceTokenResponse {
+    api_key: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct DeviceResponse {
+    device_id: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ErrorResponse {
+    error: String,
+}
+
+/// Run the login flow. If `inline` is true, skip the header (called from init).
+/// If `api_key_arg` is Some, skip the interactive flow and use the key directly.
+pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) -> Result<()> {
+    if !inline {
+        println!("ctxovrflw cloud login\n");
+    }
+
+    // Check if already logged in
+    if cfg.is_logged_in() && api_key_arg.is_none() {
+        if cfg.is_encrypted() && cfg.get_cached_key().is_none() {
+            println!("Logged in, but sync PIN has expired. Please re-enter it.");
+            return prompt_sync_pin(cfg).await;
+        }
+        println!("Already logged in (device: {}).", cfg.device_id.as_deref().unwrap_or("?"));
+        println!("To re-login, run: ctxovrflw logout");
+        return Ok(());
+    }
+
+    let client = reqwest::Client::new();
+    let cloud_url = &cfg.cloud_url;
+
+    let api_key = if let Some(key) = api_key_arg {
+        // ─── Direct API key auth ────────────────────────────────────────
+        println!("Authenticating with API key...");
+        // Verify the key works
+        let resp = client
+            .get(format!("{cloud_url}/v1/auth/profile"))
+            .header("Authorization", format!("Bearer {key}"))
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("Invalid API key");
+        }
+
+        let body: serde_json::Value = resp.json().await?;
+        let email = body["user"]["email"].as_str().unwrap_or("unknown").to_string();
+        println!("✓ Authenticated as {email}");
+
+        // Save email
+        let mut cfg = cfg.clone();
+        cfg.email = Some(email);
+        cfg.save()?;
+
+        key.to_string()
+    } else if is_tty() {
+        // ─── Device code flow (interactive TTY) ─────────────────────────
+        device_code_flow(&client, cloud_url).await?
+    } else {
+        // ─── Fallback: email/password (non-TTY or if device flow fails) ─
+        email_password_flow(&client, cloud_url).await?
+    };
+
+    // Register this device
+    let fingerprint = Config::device_fingerprint();
+    let device_name = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    println!("Registering device '{device_name}'...");
+
+    let dev_resp = client
+        .post(format!("{cloud_url}/v1/devices/register"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({
+            "name": device_name,
+            "device_fingerprint": fingerprint,
+        }))
+        .send()
+        .await?;
+
+    let device_id = if dev_resp.status().is_success() {
+        let dev: DeviceResponse = dev_resp.json().await?;
+        dev.device_id
+    } else {
+        let list_resp = client
+            .get(format!("{cloud_url}/v1/devices"))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .send()
+            .await?;
+
+        if list_resp.status().is_success() {
+            let body: serde_json::Value = list_resp.json().await?;
+            let devices = body.get("devices")
+                .and_then(|d| d.as_array())
+                .cloned()
+                .unwrap_or_default();
+            devices.iter()
+                .find(|d| d["device_fingerprint"].as_str() == Some(&fingerprint))
+                .and_then(|d| d["id"].as_str().map(String::from))
+                .ok_or_else(|| anyhow::anyhow!("Failed to register device"))?
+        } else {
+            anyhow::bail!("Failed to register device");
+        }
+    };
+
+    println!("✓ Device registered");
+
+    // Save config
+    let mut cfg = Config::load()?;
+    cfg.api_key = Some(api_key.clone());
+    cfg.device_id = Some(device_id.clone());
+    cfg.save()?;
+
+    // Fetch tier from profile
+    let profile_resp = client
+        .get(format!("{cloud_url}/v1/auth/profile"))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .send()
+        .await?;
+
+    if profile_resp.status().is_success() {
+        let body: serde_json::Value = profile_resp.json().await?;
+        let tier_str = body["user"]["tier"].as_str().unwrap_or("free");
+        let mut cfg = Config::load()?;
+        cfg.tier = match tier_str {
+            "standard" => crate::config::Tier::Standard,
+            "pro" => crate::config::Tier::Pro,
+            _ => crate::config::Tier::Free,
+        };
+        cfg.save()?;
+    }
+
+    // Set up sync PIN if cloud sync is available
+    let cfg = Config::load()?;
+    if cfg.tier.cloud_sync_enabled() {
+        setup_sync_pin(&cfg).await?;
+    } else {
+        println!("\n✓ Logged in! Free tier — local-only mode.");
+        println!("  Upgrade for cloud sync: https://ctxovrflw.dev/pricing");
+    }
+
+    Ok(())
+}
+
+/// Device code flow — opens browser, user enters code on website
+async fn device_code_flow(client: &reqwest::Client, cloud_url: &str) -> Result<String> {
+    let device_name = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    // Request device code
+    let resp = client
+        .post(format!("{cloud_url}/v1/auth/device/code"))
+        .json(&serde_json::json!({ "device_name": device_name }))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        println!("Device auth not available, falling back to email/password...\n");
+        return email_password_flow(client, cloud_url).await;
+    }
+
+    let code_resp: DeviceCodeResponse = resp.json().await?;
+
+    println!("  Open this URL in your browser:\n");
+    println!("    {}", code_resp.verification_url);
+    println!("\n  Then enter this code:\n");
+    println!("    ┌──────────────┐");
+    println!("    │  {}  │", code_resp.user_code);
+    println!("    └──────────────┘\n");
+
+    // Try to open browser automatically
+    let _ = open_browser(&code_resp.verification_url);
+
+    println!("  Waiting for approval... (expires in {}m)", code_resp.expires_in / 60);
+
+    // Poll for token
+    let interval = std::time::Duration::from_secs(code_resp.interval.max(3));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(code_resp.expires_in);
+
+    loop {
+        if std::time::Instant::now() > deadline {
+            anyhow::bail!("Device authorization timed out. Run `ctxovrflw login` to try again.");
+        }
+
+        tokio::time::sleep(interval).await;
+
+        let resp = client
+            .post(format!("{cloud_url}/v1/auth/device/token"))
+            .json(&serde_json::json!({ "device_code": code_resp.device_code }))
+            .send()
+            .await?;
+
+        let status = resp.status();
+        let body: DeviceTokenResponse = resp.json().await?;
+
+        if let Some(api_key) = body.api_key {
+            println!("\n✓ Authorized!");
+            return Ok(api_key);
+        }
+
+        match body.error.as_deref() {
+            Some("authorization_pending") => {
+                // Still waiting — continue polling
+                continue;
+            }
+            Some("expired_token") => {
+                anyhow::bail!("Device code expired. Run `ctxovrflw login` to try again.");
+            }
+            Some(err) => {
+                anyhow::bail!("Authorization failed: {err}");
+            }
+            None if !status.is_success() => {
+                anyhow::bail!("Authorization failed (HTTP {status})");
+            }
+            None => continue,
+        }
+    }
+}
+
+/// Email/password fallback flow
+async fn email_password_flow(client: &reqwest::Client, cloud_url: &str) -> Result<String> {
+    print!("Email: ");
+    std::io::Write::flush(&mut std::io::stdout())?;
+    let mut email = String::new();
+    std::io::stdin().read_line(&mut email)?;
+    let email = email.trim().to_string();
+    if email.is_empty() {
+        anyhow::bail!("Email required.");
+    }
+
+    print!("Password: ");
+    std::io::Write::flush(&mut std::io::stdout())?;
+    let mut password = String::new();
+    std::io::stdin().read_line(&mut password)?;
+    let password = password.trim().to_string();
+    if password.is_empty() {
+        anyhow::bail!("Password required.");
+    }
+
+    println!("\nAuthenticating...");
+    let login_resp = client
+        .post(format!("{cloud_url}/v1/auth/login"))
+        .json(&serde_json::json!({"email": email, "password": password}))
+        .send()
+        .await?;
+
+    let (api_key, action) = if login_resp.status().is_success() {
+        let auth: AuthResponse = login_resp.json().await?;
+        (auth.api_key, "Logged in")
+    } else {
+        println!("No account found. Creating one...");
+        let signup_resp = client
+            .post(format!("{cloud_url}/v1/auth/signup"))
+            .json(&serde_json::json!({"email": email, "password": password}))
+            .send()
+            .await?;
+
+        if !signup_resp.status().is_success() {
+            let err: ErrorResponse = signup_resp.json().await?;
+            anyhow::bail!("Auth failed: {}", err.error);
+        }
+
+        let auth: AuthResponse = signup_resp.json().await?;
+        (auth.api_key, "Account created")
+    };
+
+    println!("✓ {action}");
+
+    // Save email to config
+    let mut cfg = Config::load()?;
+    cfg.email = Some(email);
+    cfg.save()?;
+
+    Ok(api_key)
+}
+
+/// Set up zero-knowledge sync encryption
+async fn setup_sync_pin(cfg: &Config) -> Result<()> {
+    let email = cfg.email.as_deref().unwrap_or("unknown");
+    let has_verifier = cfg.pin_verifier.is_some();
+
+    println!("\n🔐 Zero-Knowledge Encryption Setup");
+    println!("Your memories are encrypted before leaving this device.\n");
+
+    if !has_verifier {
+        // New setup: create a sync PIN
+        print!("Create sync PIN (min 6 chars): ");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        let mut pin = String::new();
+        std::io::stdin().read_line(&mut pin)?;
+        let pin = pin.trim().to_string();
+        if pin.len() < 6 {
+            anyhow::bail!("Sync PIN must be at least 6 characters.");
+        }
+
+        print!("Confirm sync PIN: ");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        let mut pin_confirm = String::new();
+        std::io::stdin().read_line(&mut pin_confirm)?;
+        if pin.trim() != pin_confirm.trim() {
+            anyhow::bail!("PINs don't match.");
+        }
+
+        let key = crypto::derive_key(&pin, email);
+        let verifier = crypto::create_pin_verifier(&key)?;
+
+        let mut cfg = Config::load()?;
+        cfg.pin_verifier = Some(verifier);
+        cfg.cache_key(&key)?;
+
+        println!("✓ Encryption key derived and cached (30-day TTL)");
+        println!("\n⚠️  IMPORTANT: If you lose your sync PIN, your cloud memories cannot be recovered.");
+    } else {
+        // Existing account on new device
+        print!("Enter your sync PIN: ");
+        std::io::Write::flush(&mut std::io::stdout())?;
+        let mut pin = String::new();
+        std::io::stdin().read_line(&mut pin)?;
+        let pin = pin.trim().to_string();
+
+        let key = crypto::derive_key(&pin, email);
+        let verifier = crypto::create_pin_verifier(&key)?;
+
+        let mut cfg = Config::load()?;
+        cfg.pin_verifier = Some(verifier);
+        cfg.cache_key(&key)?;
+
+        println!("✓ Encryption key derived and cached (30-day TTL)");
+    }
+
+    let cfg = Config::load()?;
+    println!("\n✓ Ready! Cloud sync is {}.",
+        if cfg.auto_sync { format!("enabled (every {}s)", cfg.sync_interval_secs) } else { "disabled".to_string() }
+    );
+
+    Ok(())
+}
+
+pub async fn run(cfg: &Config) -> Result<()> {
+    run_inner(cfg, false, None).await
+}
+
+pub async fn run_with_key(cfg: &Config, key: &str) -> Result<()> {
+    run_inner(cfg, false, Some(key)).await
+}
+
+/// Re-prompt for sync PIN when the cached key has expired.
+async fn prompt_sync_pin(cfg: &Config) -> Result<()> {
+    let email = cfg.email.as_deref().ok_or_else(|| anyhow::anyhow!("No email in config"))?;
+
+    print!("Sync PIN: ");
+    std::io::Write::flush(&mut std::io::stdout())?;
+    let mut pin = String::new();
+    std::io::stdin().read_line(&mut pin)?;
+    let pin = pin.trim().to_string();
+
+    let key = crypto::derive_key(&pin, email);
+
+    if let Some(verifier) = &cfg.pin_verifier {
+        if !crypto::verify_pin(&key, verifier) {
+            anyhow::bail!("Wrong sync PIN.");
+        }
+    }
+
+    let mut cfg = cfg.clone();
+    cfg.cache_key(&key)?;
+    println!("✓ Sync PIN accepted, key cached for 30 days.");
+    Ok(())
+}
+
+fn is_tty() -> bool {
+    atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stdout)
+}
+
+fn open_browser(url: &str) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    { std::process::Command::new("open").arg(url).spawn()?; }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Try xdg-open, then wslview (WSL)
+        if std::process::Command::new("xdg-open").arg(url).spawn().is_err() {
+            let _ = std::process::Command::new("wslview").arg(url).spawn();
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    { std::process::Command::new("cmd").args(["/c", "start", url]).spawn()?; }
+
+    Ok(())
+}
