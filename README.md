@@ -111,28 +111,13 @@ ctxovrflw version           # Check current version
 | **Cloud sync** | — | ✓ (E2E encrypted) | ✓ (E2E encrypted) |
 | **Context synthesis** | — | — | ✓ |
 
-## Building from Source
+## Source Available
 
-```bash
-# Prerequisites: Rust 1.70+, ONNX Runtime 1.23.0
+This source code is published for **transparency and trust**. ctxovrflw runs as a daemon on your machine with access to your AI tools — you deserve to see exactly what it does.
 
-# Clone
-git clone https://github.com/M4cs/ctxovrflw-client.git
-cd ctxovrflw-client
+You are free to read, inspect, and audit the code. Official binaries are the supported way to run ctxovrflw.
 
-# Build without ONNX (keyword search only)
-cargo build --release
-
-# Build with ONNX (semantic search)
-export ORT_DYLIB_PATH=/path/to/libonnxruntime.so
-cargo build --release --features onnx
-```
-
-## License
-
-Business Source License 1.1 — see [LICENSE](LICENSE).
-
-You can read, audit, and build the source for personal use. You cannot use it to create a competing commercial product or service. After 4 years, the code converts to Apache 2.0.
+See [LICENSE.md](LICENSE.md) for full terms.
 
 ## Links
 
