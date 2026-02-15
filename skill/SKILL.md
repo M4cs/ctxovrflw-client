@@ -1,6 +1,20 @@
 ---
 name: ctxovrflw
 description: Persistent cross-agent memory via ctxovrflw. Install and configure the ctxovrflw daemon for shared memory across AI agents. Use when the user wants persistent memory, cross-tool context sharing, knowledge graph, or mentions ctxovrflw/context overflow. Replaces flat-file memory (MEMORY.md) with semantic search, cloud sync, and agent-to-agent memory sharing.
+metadata:
+  openclaw:
+    requires:
+      bins: ["mcporter"]
+    install:
+      - id: mcporter
+        kind: node
+        package: mcporter
+        bins: ["mcporter"]
+        label: "Install mcporter (MCP client)"
+      - id: ctxovrflw
+        kind: script
+        script: scripts/setup.sh
+        label: "Install ctxovrflw daemon"
 ---
 
 # ctxovrflw
