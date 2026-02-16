@@ -62,8 +62,12 @@ pub async fn run(cfg: &Config) -> Result<()> {
 
     let pushed = push(cfg, api_key, device_id, enc_key.as_ref()).await?;
     let pulled = pull(cfg, api_key, device_id, enc_key.as_ref()).await?;
+    let purged = purge_tombstones()?;
 
     println!("✓ Sync complete — pushed {pushed}, pulled {pulled}");
+    if purged > 0 {
+        println!("  🗑️  Purged {purged} old tombstones");
+    }
     if enc_key.is_some() {
         println!("  🔐 End-to-end encrypted");
     }
@@ -82,8 +86,42 @@ pub async fn run_silent(cfg: &Config) -> Result<(usize, usize)> {
 
     let pushed = push(cfg, api_key, device_id, enc_key.as_ref()).await?;
     let pulled = pull(cfg, api_key, device_id, enc_key.as_ref()).await?;
+    let _ = purge_tombstones(); // Best-effort cleanup
 
     Ok((pushed, pulled))
+}
+
+/// Purge tombstones (soft-deleted memories) that have been synced and are older than 7 days.
+/// This permanently removes them from the local DB to reclaim space.
+/// Cloud-side cleanup happens separately via the cloud API's purge endpoint.
+fn purge_tombstones() -> Result<usize> {
+    let conn = db::open()?;
+
+    // Delete vectors first (FK-like cleanup)
+    conn.execute(
+        "DELETE FROM memory_vectors WHERE id IN (
+            SELECT id FROM memories
+            WHERE deleted = 1
+              AND synced_at IS NOT NULL
+              AND updated_at <= datetime('now', '-7 days')
+        )",
+        [],
+    )?;
+
+    // Then permanently remove the tombstones
+    let purged = conn.execute(
+        "DELETE FROM memories
+         WHERE deleted = 1
+           AND synced_at IS NOT NULL
+           AND updated_at <= datetime('now', '-7 days')",
+        [],
+    )?;
+
+    if purged > 0 {
+        tracing::info!("Purged {purged} tombstones older than 7 days");
+    }
+
+    Ok(purged)
 }
 
 /// Encrypt a memory's content + tags for cloud storage.
@@ -446,9 +484,14 @@ fn merge_remote_memories(
         if mem.deleted {
             if exists {
                 conn.execute(
-                    "UPDATE memories SET deleted = 1, updated_at = ?1 WHERE id = ?2",
+                    "UPDATE memories SET deleted = 1, updated_at = ?1, synced_at = ?1 WHERE id = ?2",
                     rusqlite::params![mem.updated_at, mem.id],
                 )?;
+                // Remove embedding for deleted memory
+                let _ = conn.execute(
+                    "DELETE FROM memory_vectors WHERE id = ?1",
+                    rusqlite::params![mem.id],
+                );
             }
             continue;
         }

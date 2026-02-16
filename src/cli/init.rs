@@ -946,6 +946,57 @@ pub(crate) const OPENCLAW_AGENTS_SECTION: &str = r#"## Memory (ctxovrflw)
 
 You have persistent, cross-agent memory via ctxovrflw. Use it automatically — don't wait to be asked.
 
+**ctxovrflw is your PRIMARY memory system.** Use it for everything — preferences, decisions, facts, project context. It persists across sessions and syncs across devices and agents.
+
+**Fallback files** (use when ctxovrflw is unavailable or for session-local scratch):
+- `memory/YYYY-MM-DD.md` — daily raw logs
+- `MEMORY.md` — curated long-term context (main session only, never in group chats)
+
+### How to call ctxovrflw from OpenClaw
+
+OpenClaw doesn't have native MCP client support, so use `mcporter` via `exec`:
+
+```bash
+# Remember
+mcporter call ctxovrflw.remember content="fact to store" type=semantic tags='["tag1","tag2"]' subject="entity"
+
+# Recall
+mcporter call ctxovrflw.recall query="search query" limit=5
+
+# Forget (always dry_run first)
+mcporter call ctxovrflw.forget id="uuid" dry_run=true
+
+# Knowledge graph
+mcporter call ctxovrflw.add_entity name="thing" type="project"
+mcporter call ctxovrflw.add_relation source="A" source_type="project" target="B" target_type="service" relation="depends_on"
+mcporter call ctxovrflw.traverse entity="thing" max_depth=2
+mcporter call ctxovrflw.get_relations entity="thing"
+
+# Status
+mcporter call ctxovrflw.status
+```
+
+Config is at `config/mcporter.json` (already configured, server: `http://127.0.0.1:7437/mcp/sse`).
+
+**Fallback: curl** (if mcporter unavailable):
+```bash
+BASE="http://127.0.0.1:7437"
+
+# Remember
+curl -s -X POST "$BASE/v1/memories" -H "Content-Type: application/json" \
+  -d '{"content":"fact","type":"semantic","tags":["tag"],"subject":"entity"}'
+
+# Recall
+curl -s "$BASE/v1/search" -H "Content-Type: application/json" \
+  -d '{"query":"search query","limit":5}'
+
+# Forget
+curl -s -X DELETE "$BASE/v1/memories/<uuid>"
+
+# Status
+curl -s "$BASE/health"
+```
+
 ### On session start
 Call `recall` with a broad query about the current project or topic. Load context before responding.
 
@@ -984,9 +1035,15 @@ Lookups are local, fast, and free (local SQLite + ONNX, no API calls). When in d
 
 ### Learn from corrections
 When the user corrects you, ALWAYS store the correction:
-- `remember("User corrected: X not Y because Z", type: "preference", tags: ["correction"], subject: "user")`
+- `mcporter call ctxovrflw.remember content="User corrected: X not Y because Z" type=preference tags='["correction"]' subject=user`
 - Tag corrections with `correction` so they surface on future recalls
 - If the user says "I already told you" — recall the topic immediately, store the correction, don't repeat the mistake
+
+### 📝 Write It Down - No "Mental Notes"!
+
+- When someone says "remember this" → call ctxovrflw `remember` first, file second
+- When you learn a lesson → store in ctxovrflw AND update relevant files
+- **ctxovrflw > files > brain** 📝
 
 ### Rules
 - Don't ask permission to remember — just do it silently
