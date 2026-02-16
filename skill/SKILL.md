@@ -20,6 +20,20 @@ accessible by every AI tool the user runs (Cursor, Claude Code, Cline, Windsurf,
 
 You interact with it via the MCP tools: `remember`, `recall`, `forget`, and `status`.
 
+## Requirements
+
+- ctxovrflw Daemon
+
+## Installation
+
+```
+curl -fsSL https://ctxovrflw.dev/install.sh | sh
+```
+
+This will install the ctxovrflw daemon onto your machine. You can start the daemon with `ctxovrflw start`
+
+If you want to enable cloud sync, the user will need to have an active subscription and login. You can use `ctxovrflw login` to do so.
+
 ## Core Principle
 
 **What you store, every other AI tool can recall.** Context shared in Cursor is available in
