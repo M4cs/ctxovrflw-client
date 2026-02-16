@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -1179,7 +1179,11 @@ async fn run_loop(
         // Poll for keyboard events (50ms timeout for smooth animation)
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                app.handle_key(key).await?;
+                // On Windows, crossterm fires Press + Release (and Repeat) events.
+                // Only handle Press to avoid double-processing.
+                if key.kind == KeyEventKind::Press {
+                    app.handle_key(key).await?;
+                }
             }
         }
 

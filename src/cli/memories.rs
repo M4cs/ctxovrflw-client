@@ -1,6 +1,6 @@
 use anyhow::Result;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -292,12 +292,16 @@ fn run_loop(
         terminal.draw(|f| ui(f, app))?;
 
         if let Event::Key(key) = event::read()? {
-            match app.mode {
-                Mode::List => handle_list_key(app, key, conn, cfg)?,
-                Mode::Detail => handle_detail_key(app, key),
-                Mode::Search => handle_search_key(app, key),
-                Mode::ConfirmDelete => handle_delete_key(app, key, conn)?,
-                Mode::Syncing => {} // non-interactive, will transition back
+            // On Windows, crossterm fires Press + Release events.
+            // Only handle Press to avoid double-processing.
+            if key.kind == KeyEventKind::Press {
+                match app.mode {
+                    Mode::List => handle_list_key(app, key, conn, cfg)?,
+                    Mode::Detail => handle_detail_key(app, key),
+                    Mode::Search => handle_search_key(app, key),
+                    Mode::ConfirmDelete => handle_delete_key(app, key, conn)?,
+                    Mode::Syncing => {} // non-interactive, will transition back
+                }
             }
         }
 
