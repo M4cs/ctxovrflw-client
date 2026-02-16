@@ -100,10 +100,17 @@ fn encrypt_memory(
     Ok((enc_content, enc_tags, hash))
 }
 
-/// Max batch size for a single push request
-const PUSH_BATCH_SIZE: usize = 100;
+/// Max memories to fetch at once (pre-batching)
+const FETCH_BATCH_SIZE: usize = 200;
+/// Target max payload size per push request (leave headroom below 1MB cloud limit)
+const MAX_PAYLOAD_BYTES: usize = 800 * 1024; // 800KB
 
-/// Push unsynced local memories to cloud (incremental, batched)
+/// Estimate the JSON size of a serialized memory value
+fn estimate_size(mem: &serde_json::Value) -> usize {
+    serde_json::to_string(mem).map(|s| s.len()).unwrap_or(1024)
+}
+
+/// Push unsynced local memories to cloud (incremental, size-aware batching)
 async fn push(
     cfg: &Config,
     api_key: &str,
@@ -115,10 +122,49 @@ async fn push(
     let mut total_synced: usize = 0;
 
     loop {
-        // Only fetch memories that haven't been synced, or were updated after last sync
-        let batch = get_unsynced_memories(&conn, enc_key, PUSH_BATCH_SIZE)?;
-        if batch.is_empty() {
+        let all_unsynced = get_unsynced_memories(&conn, enc_key, FETCH_BATCH_SIZE)?;
+        if all_unsynced.is_empty() {
             break;
+        }
+
+        let fetched_count = all_unsynced.len();
+
+        // Split into size-aware batches
+        let mut batch: Vec<serde_json::Value> = Vec::new();
+        let mut batch_size: usize = 100; // base JSON overhead
+        let mut remaining: std::collections::VecDeque<serde_json::Value> = all_unsynced.into();
+
+        while let Some(mem) = remaining.pop_front() {
+            let mem_size = estimate_size(&mem);
+
+            // Skip memories that are individually too large (>500KB) — log and mark as synced to avoid infinite loop
+            if mem_size > 500 * 1024 {
+                let id = mem.get("id").and_then(|v| v.as_str()).unwrap_or("?");
+                tracing::warn!("Skipping oversized memory {} ({} bytes) — too large for cloud sync", id, mem_size);
+                let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+                let _ = conn.execute(
+                    "UPDATE memories SET synced_at = ?1 WHERE id = ?2",
+                    rusqlite::params![now, id],
+                );
+                continue;
+            }
+
+            // If adding this memory would exceed the limit, push what we have first
+            if !batch.is_empty() && batch_size + mem_size > MAX_PAYLOAD_BYTES {
+                remaining.push_front(mem);
+                break;
+            }
+
+            batch_size += mem_size;
+            batch.push(mem);
+        }
+
+        if batch.is_empty() {
+            // All remaining were oversized — check if we had any
+            if fetched_count < FETCH_BATCH_SIZE {
+                break;
+            }
+            continue;
         }
 
         let batch_ids: Vec<String> = batch.iter()
@@ -162,8 +208,8 @@ async fn push(
             break;
         }
 
-        // If we got fewer than batch size, we're done
-        if batch.len() < PUSH_BATCH_SIZE {
+        // If we fetched fewer than the limit and processed everything, we're done
+        if fetched_count < FETCH_BATCH_SIZE && remaining.is_empty() {
             break;
         }
     }
