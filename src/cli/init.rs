@@ -29,10 +29,16 @@ pub(crate) enum DetectMethod {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ConfigLocation {
+    /// Relative to home dir (~/)
     Home(&'static str),
+    /// Relative to OS config dir (XDG_CONFIG_HOME on Linux, ~/Library/Application Support on Mac, %APPDATA% on Windows)
     Config(&'static str),
+    /// macOS: ~/Library/Application Support/...
     MacApp(&'static str),
+    /// Windows: %APPDATA%/...
     AppData(&'static str),
+    /// Windows: %LOCALAPPDATA%/...
+    LocalAppData(&'static str),
 }
 
 pub(crate) const AGENTS: &[AgentDef] = &[
@@ -90,31 +96,43 @@ pub(crate) const AGENTS: &[AgentDef] = &[
     },
     AgentDef {
         name: "Continue",
-        detect: DetectMethod::ConfigDir("continue"),
-        config_paths: &[ConfigLocation::Config("continue/config.json")],
+        detect: DetectMethod::Any(&["continue"]),
+        config_paths: &[
+            ConfigLocation::Home(".continue/config.json"),
+            ConfigLocation::Config("continue/config.json"),
+        ],
         cli_install: None,
         global_rules_path: None,
     },
     AgentDef {
         name: "Codex CLI",
         detect: DetectMethod::Binary("codex"),
-        config_paths: &[ConfigLocation::Config("codex/mcp.json")],
+        config_paths: &[
+            ConfigLocation::Home(".codex/mcp.json"),
+            ConfigLocation::Config("codex/mcp.json"),
+        ],
         cli_install: None,
-        global_rules_path: Some("codex.md"),
+        global_rules_path: Some(".codex/codex.md"),
     },
     AgentDef {
         name: "Goose",
         detect: DetectMethod::Any(&["goose", "goosed"]),
-        config_paths: &[ConfigLocation::Config("goose/config.json")],
+        config_paths: &[
+            ConfigLocation::Home(".config/goose/config.json"),
+            ConfigLocation::Config("goose/config.json"),
+        ],
         cli_install: None,
         global_rules_path: None,
     },
     AgentDef {
         name: "Gemini CLI",
-        detect: DetectMethod::Binary("gemini"),
-        config_paths: &[ConfigLocation::Config("gemini/settings.json")],
+        detect: DetectMethod::Any(&["gemini"]),
+        config_paths: &[
+            ConfigLocation::Home(".gemini/settings.json"),
+            ConfigLocation::Config("gemini/settings.json"),
+        ],
         cli_install: None,
-        global_rules_path: None,
+        global_rules_path: Some(".gemini/.gemini_rules"),
     },
     AgentDef {
         name: "Antigravity",
@@ -126,7 +144,10 @@ pub(crate) const AGENTS: &[AgentDef] = &[
     AgentDef {
         name: "Amp",
         detect: DetectMethod::Binary("amp"),
-        config_paths: &[ConfigLocation::Config("amp/mcp.json")],
+        config_paths: &[
+            ConfigLocation::Home(".amp/mcp.json"),
+            ConfigLocation::Config("amp/mcp.json"),
+        ],
         cli_install: None,
         global_rules_path: None,
     },
@@ -140,7 +161,10 @@ pub(crate) const AGENTS: &[AgentDef] = &[
     AgentDef {
         name: "OpenCode",
         detect: DetectMethod::Binary("opencode"),
-        config_paths: &[ConfigLocation::Config("opencode/mcp.json")],
+        config_paths: &[
+            ConfigLocation::Home(".opencode/mcp.json"),
+            ConfigLocation::Config("opencode/mcp.json"),
+        ],
         cli_install: None,
         global_rules_path: None,
     },
@@ -164,7 +188,10 @@ pub(crate) const AGENTS: &[AgentDef] = &[
     AgentDef {
         name: "Factory (Drip)",
         detect: DetectMethod::Binary("drip"),
-        config_paths: &[ConfigLocation::Config("factory/mcp.json")],
+        config_paths: &[
+            ConfigLocation::Home(".factory/mcp.json"),
+            ConfigLocation::Config("factory/mcp.json"),
+        ],
         cli_install: None,
         global_rules_path: None,
     },
@@ -200,7 +227,10 @@ pub(crate) fn detect_agents() -> Vec<DetectedAgent> {
         let detected = match &def.detect {
             DetectMethod::Binary(name) => which(name),
             DetectMethod::Dir(rel) => home.join(rel).exists(),
-            DetectMethod::ConfigDir(rel) => config_dir.join(rel).exists(),
+            DetectMethod::ConfigDir(rel) => {
+                config_dir.join(rel).exists()
+                    || home.join(format!(".{}", rel.to_lowercase())).exists()
+            }
             DetectMethod::Any(names) => names.iter().any(|n| which(n)),
         };
 
@@ -228,16 +258,39 @@ pub(crate) fn resolve_config_path(loc: &ConfigLocation) -> PathBuf {
     let config_dir = dirs::config_dir().unwrap_or_default();
     match loc {
         ConfigLocation::Home(rel) => home.join(rel),
-        ConfigLocation::Config(rel) => config_dir.join(rel),
+        ConfigLocation::Config(rel) => {
+            // On Windows, dirs::config_dir() = %APPDATA% (Roaming).
+            // Some tools use %APPDATA%, some use %LOCALAPPDATA%, some use ~.
+            // Check the standard config_dir first, then fall back to home.
+            let primary = config_dir.join(rel);
+            if primary.exists() || primary.parent().map(|p| p.exists()).unwrap_or(false) {
+                return primary;
+            }
+            // On Windows, also check %LOCALAPPDATA%
+            #[cfg(windows)]
+            {
+                if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                    let local_path = PathBuf::from(local).join(rel);
+                    if local_path.exists() || local_path.parent().map(|p| p.exists()).unwrap_or(false) {
+                        return local_path;
+                    }
+                }
+            }
+            primary
+        }
         ConfigLocation::MacApp(rel) => home.join("Library/Application Support").join(rel),
         ConfigLocation::AppData(rel) => std::env::var("APPDATA")
             .map(|a| PathBuf::from(a).join(rel))
-            .unwrap_or_else(|_| home.join(rel)),
+            .unwrap_or_else(|_| config_dir.join(rel)),
+        ConfigLocation::LocalAppData(rel) => std::env::var("LOCALAPPDATA")
+            .map(|a| PathBuf::from(a).join(rel))
+            .unwrap_or_else(|_| config_dir.join(rel)),
     }
 }
 
 pub(crate) fn which(cmd: &str) -> bool {
-    std::process::Command::new("which")
+    let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    std::process::Command::new(which_cmd)
         .arg(cmd)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
