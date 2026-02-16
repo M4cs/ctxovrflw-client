@@ -473,13 +473,17 @@ fn merge_remote_memories(
             (mem.content.clone(), mem.tags.clone())
         };
 
-        let exists: bool = conn
+        // Check if the memory exists locally and whether it's deleted
+        let local_state: Option<(bool,)> = conn
             .query_row(
-                "SELECT COUNT(*) FROM memories WHERE id = ?1",
+                "SELECT deleted FROM memories WHERE id = ?1",
                 rusqlite::params![mem.id],
-                |r| r.get::<_, i32>(0),
+                |r| Ok((r.get::<_, i32>(0)? != 0,)),
             )
-            .map(|c| c > 0)?;
+            .ok();
+
+        let exists = local_state.is_some();
+        let locally_deleted = local_state.map(|(d,)| d).unwrap_or(false);
 
         if mem.deleted {
             if exists {
@@ -496,12 +500,17 @@ fn merge_remote_memories(
             continue;
         }
 
+        // If locally deleted, don't resurrect — local deletion wins
+        if locally_deleted {
+            continue;
+        }
+
         let tags_json = serde_json::to_string(&tags)?;
 
         if exists {
             let rows = conn.execute(
                 "UPDATE memories SET content = ?1, type = ?2, tags = ?3, subject = ?4, source = ?5,
-                 expires_at = ?6, updated_at = ?7, deleted = 0
+                 expires_at = ?6, updated_at = ?7, synced_at = ?7, deleted = 0
                  WHERE id = ?8 AND updated_at < ?7",
                 rusqlite::params![content, mem.memory_type, tags_json, mem.subject, mem.source, mem.expires_at, mem.updated_at, mem.id],
             )?;
@@ -518,8 +527,8 @@ fn merge_remote_memories(
             }
         } else {
             conn.execute(
-                "INSERT INTO memories (id, content, type, tags, subject, source, expires_at, deleted, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9)",
+                "INSERT INTO memories (id, content, type, tags, subject, source, expires_at, deleted, created_at, updated_at, synced_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?9)",
                 rusqlite::params![mem.id, content, mem.memory_type, tags_json, mem.subject, mem.source, mem.expires_at, mem.created_at, mem.updated_at],
             )?;
 
@@ -533,6 +542,16 @@ fn merge_remote_memories(
                 }
             }
         }
+    }
+
+    // Mark all pulled memory IDs as synced (catch echoed-back pushes that
+    // didn't match the UPDATE condition but are still in sync with cloud)
+    let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    for mem in memories {
+        let _ = conn.execute(
+            "UPDATE memories SET synced_at = ?1 WHERE id = ?2 AND (synced_at IS NULL OR synced_at < ?1)",
+            rusqlite::params![now, mem.id],
+        );
     }
 
     Ok(())
