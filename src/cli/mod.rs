@@ -3,6 +3,7 @@ pub mod forget;
 pub mod init;
 pub mod login;
 pub mod logout;
+pub mod memories;
 pub mod recall;
 pub mod reindex;
 pub mod remember;
@@ -78,6 +79,9 @@ pub enum Command {
         #[arg(short, long)]
         dry_run: bool,
     },
+
+    /// Browse, search, and manage memories in an interactive TUI
+    Memories,
 
     /// Rebuild embeddings for all memories (fixes missing semantic search results)
     Reindex,

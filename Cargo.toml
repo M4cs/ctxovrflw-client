@@ -68,6 +68,8 @@ futures-core = "0.3"
 # TUI / Interactive CLI
 dialoguer = { version = "0.11", features = ["fuzzy-select"] }
 console = "0.15"
+ratatui = "0.29"
+crossterm = "0.28"
 
 # Crypto (zero-knowledge sync)
 ring = "0.17"

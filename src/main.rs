@@ -39,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Command::Recall { query, limit } => cli::recall::run(&cfg, &query, limit).await,
         Command::Forget { id, dry_run } => cli::forget::run(&cfg, &id, dry_run).await,
+        Command::Memories => cli::memories::run(&cfg).await,
         Command::Reindex => {
             cli::reindex::run()?;
             Ok(())
