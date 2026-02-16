@@ -21,6 +21,7 @@ struct DeviceCodeResponse {
 #[derive(serde::Deserialize)]
 struct DeviceTokenResponse {
     api_key: Option<String>,
+    device_id: Option<String>,
     error: Option<String>,
 }
 
@@ -55,7 +56,7 @@ pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) ->
     let client = reqwest::Client::new();
     let cloud_url = &cfg.cloud_url;
 
-    let api_key = if let Some(key) = api_key_arg {
+    let (api_key, pre_device_id) = if let Some(key) = api_key_arg {
         // ─── Direct API key auth ────────────────────────────────────────
         println!("Authenticating with API key...");
         // Verify the key works
@@ -78,7 +79,7 @@ pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) ->
         cfg.email = Some(email);
         cfg.save()?;
 
-        key.to_string()
+        (key.to_string(), None)
     } else if is_tty() {
         // ─── Device code flow (interactive TTY) ─────────────────────────
         device_code_flow(&client, cloud_url).await?
@@ -87,7 +88,7 @@ pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) ->
         email_password_flow(&client, cloud_url).await?
     };
 
-    // Register this device
+    // Register this device (pass pre-created device_id from device code flow if available)
     let fingerprint = Config::device_fingerprint();
     let device_name = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
@@ -95,13 +96,18 @@ pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) ->
 
     println!("Registering device '{device_name}'...");
 
+    let mut register_body = serde_json::json!({
+        "name": device_name,
+        "device_fingerprint": fingerprint,
+    });
+    if let Some(ref pre_id) = pre_device_id {
+        register_body["device_id"] = serde_json::json!(pre_id);
+    }
+
     let dev_resp = client
         .post(format!("{cloud_url}/v1/devices/register"))
         .header("Authorization", format!("Bearer {api_key}"))
-        .json(&serde_json::json!({
-            "name": device_name,
-            "device_fingerprint": fingerprint,
-        }))
+        .json(&register_body)
         .send()
         .await?;
 
@@ -175,7 +181,7 @@ pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) ->
 }
 
 /// Device code flow — opens browser, user enters code on website
-async fn device_code_flow(client: &reqwest::Client, cloud_url: &str) -> Result<String> {
+async fn device_code_flow(client: &reqwest::Client, cloud_url: &str) -> Result<(String, Option<String>)> {
     let device_name = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "unknown".to_string());
@@ -228,7 +234,7 @@ async fn device_code_flow(client: &reqwest::Client, cloud_url: &str) -> Result<S
 
         if let Some(api_key) = body.api_key {
             println!("\n✓ Authorized!");
-            return Ok(api_key);
+            return Ok((api_key, body.device_id));
         }
 
         match body.error.as_deref() {
@@ -251,7 +257,7 @@ async fn device_code_flow(client: &reqwest::Client, cloud_url: &str) -> Result<S
 }
 
 /// Email/password fallback flow
-async fn email_password_flow(client: &reqwest::Client, cloud_url: &str) -> Result<String> {
+async fn email_password_flow(client: &reqwest::Client, cloud_url: &str) -> Result<(String, Option<String>)> {
     print!("Email: ");
     std::io::Write::flush(&mut std::io::stdout())?;
     let mut email = String::new();
@@ -304,7 +310,7 @@ async fn email_password_flow(client: &reqwest::Client, cloud_url: &str) -> Resul
     cfg.email = Some(email);
     cfg.save()?;
 
-    Ok(api_key)
+    Ok((api_key, None))
 }
 
 /// Response from GET /v1/auth/pin-verifier
