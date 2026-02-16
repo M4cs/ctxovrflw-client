@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Json, Path, Query},
+    extract::{Json, Path, Query, State},
     routing::{delete, get, post, put},
     Router,
 };
@@ -10,6 +10,7 @@ use chrono::Utc;
 
 use crate::config::Config;
 use crate::db;
+use super::AppState;
 
 /// Parse a TTL string like "1h", "24h", "7d", "30m" into an expiry timestamp.
 fn parse_ttl(ttl: &str) -> Result<String, String> {
@@ -53,7 +54,7 @@ fn sanitize_error(e: &impl std::fmt::Display) -> String {
     msg
 }
 
-pub fn router() -> Router {
+pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(health))
         .route("/health", get(health))
@@ -76,6 +77,7 @@ pub fn router() -> Router {
         .route("/v1/webhooks", post(create_webhook))
         .route("/v1/webhooks/{id}", delete(delete_webhook))
         .route("/v1/status", get(status))
+        .with_state(state)
 }
 
 async fn health() -> Json<Value> {
@@ -134,7 +136,7 @@ fn validate_subject(subject: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-async fn store_memory(Json(body): Json<StoreRequest>) -> Json<Value> {
+async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreRequest>) -> Json<Value> {
     if body.content.trim().is_empty() {
         return Json(json!({ "ok": false, "error": "Content cannot be empty" }));
     }
@@ -149,10 +151,7 @@ async fn store_memory(Json(body): Json<StoreRequest>) -> Json<Value> {
         return Json(json!({ "ok": false, "error": e }));
     }
 
-    let cfg = match Config::load() {
-        Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
-    };
+    let cfg = &state.config;
 
     let conn = match db::open() {
         Ok(c) => c,
@@ -178,11 +177,10 @@ async fn store_memory(Json(body): Json<StoreRequest>) -> Json<Value> {
         .unwrap_or_default();
     let source = body.source.as_deref().unwrap_or("api");
 
-    // Generate embedding if semantic search available
-    let embedding = if cfg.tier.semantic_search_enabled() {
-        crate::embed::Embedder::new()
-            .ok()
-            .and_then(|mut e| e.embed(&body.content).ok())
+    // Generate embedding using shared embedder
+    let embedding = if let Some(ref emb) = state.embedder {
+        let mut e = emb.lock().await;
+        e.embed(&body.content).ok()
     } else {
         None
     };
@@ -252,16 +250,8 @@ fn default_recall_limit() -> usize {
     10
 }
 
-async fn recall(Json(body): Json<RecallRequest>) -> Json<Value> {
-    let cfg = match Config::load() {
-        Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
-    };
-
-    // Sync before recall to get latest from other devices
-    if cfg.is_logged_in() {
-        let _ = crate::sync::run_silent(&cfg).await;
-    }
+async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) -> Json<Value> {
+    let cfg = &state.config;
 
     let conn = match db::open() {
         Ok(c) => c,
@@ -282,22 +272,22 @@ async fn recall(Json(body): Json<RecallRequest>) -> Json<Value> {
 
     let fetch_limit = if body.max_tokens.is_some() { body.limit.max(20) } else { body.limit };
 
-    let (results, method) = if cfg.tier.semantic_search_enabled() {
-        match crate::embed::Embedder::new() {
-            Ok(mut embedder) => match embedder.embed(&body.query) {
-                Ok(embedding) => {
-                    let sem = db::search::semantic_search(&conn, &embedding, fetch_limit).unwrap_or_default();
-                    if !sem.is_empty() {
-                        (sem, SearchMethod::Semantic)
-                    } else {
-                        (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
-                    }
+    let (results, method) = if let Some(ref emb) = state.embedder {
+        let mut embedder = emb.lock().await;
+        match embedder.embed(&body.query) {
+            Ok(embedding) => {
+                drop(embedder); // Release lock before DB query
+                let sem = db::search::semantic_search(&conn, &embedding, fetch_limit).unwrap_or_default();
+                if !sem.is_empty() {
+                    (sem, SearchMethod::Semantic)
+                } else {
+                    (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
                 }
-                Err(_) => (db::search::keyword_search(&conn, &body.query, fetch_limit)
-                    .unwrap_or_default(), SearchMethod::Keyword),
-            },
-            Err(_) => (db::search::keyword_search(&conn, &body.query, fetch_limit)
-                .unwrap_or_default(), SearchMethod::Keyword),
+            }
+            Err(_) => {
+                drop(embedder);
+                (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+            }
         }
     } else {
         (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
@@ -369,11 +359,8 @@ struct UpdateRequest {
     remove_expiry: Option<bool>,
 }
 
-async fn update_memory(Path(id): Path<String>, Json(body): Json<UpdateRequest>) -> Json<Value> {
-    let cfg = match Config::load() {
-        Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
-    };
+async fn update_memory(State(state): State<AppState>, Path(id): Path<String>, Json(body): Json<UpdateRequest>) -> Json<Value> {
+    let cfg = &state.config;
 
     let conn = match db::open() {
         Ok(c) => c,
@@ -408,10 +395,9 @@ async fn update_memory(Path(id): Path<String>, Json(body): Json<UpdateRequest>) 
 
     // Re-embed if content changed
     let embedding = if let Some(ref c) = body.content {
-        if cfg.tier.semantic_search_enabled() {
-            crate::embed::Embedder::new()
-                .ok()
-                .and_then(|mut e| e.embed(c).ok())
+        if let Some(ref emb) = state.embedder {
+            let mut e = emb.lock().await;
+            e.embed(c).ok()
         } else { None }
     } else { None };
 

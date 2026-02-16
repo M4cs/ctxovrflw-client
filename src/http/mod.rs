@@ -1,12 +1,23 @@
 pub mod routes;
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use axum::Router;
 use axum::http::{header, Method};
+use tokio::sync::Mutex;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 
 use crate::config::Config;
+use crate::embed::Embedder;
+
+/// Shared application state — loaded once at daemon startup.
+#[derive(Clone)]
+pub struct AppState {
+    pub embedder: Option<Arc<Mutex<Embedder>>>,
+    pub config: Config,
+}
 
 pub async fn serve(cfg: Config, port: u16) -> Result<()> {
     let origins: Vec<axum::http::HeaderValue> = [
@@ -32,8 +43,25 @@ pub async fn serve(cfg: Config, port: u16) -> Result<()> {
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
         .max_age(std::time::Duration::from_secs(86400));
 
+    // Load embedder once at startup — reused for all requests
+    let embedder = match Embedder::new() {
+        Ok(e) => {
+            tracing::info!("ONNX embedder loaded (model stays in memory)");
+            Some(Arc::new(Mutex::new(e)))
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load embedder: {e}. Semantic search unavailable.");
+            None
+        }
+    };
+
+    let state = AppState {
+        embedder,
+        config: cfg.clone(),
+    };
+
     let app = Router::new()
-        .merge(routes::router())
+        .merge(routes::router(state))
         .nest("/mcp", crate::mcp::sse::router(cfg))
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(512 * 1024)); // 512 KB max request body

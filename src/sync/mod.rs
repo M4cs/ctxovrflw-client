@@ -36,13 +36,17 @@ struct RemoteMemory {
     updated_at: String,
 }
 
-/// Get the encryption key from config, or bail with a helpful message.
-fn get_encryption_key(cfg: &Config) -> Result<Option<[u8; 32]>> {
+/// Get the encryption key from config, or bail.
+/// Sync REQUIRES encryption — no plaintext cloud storage allowed.
+fn get_encryption_key(cfg: &Config) -> Result<[u8; 32]> {
     if !cfg.is_encrypted() {
-        return Ok(None); // Not set up yet — sync unencrypted (legacy)
+        anyhow::bail!(
+            "Encryption not configured. Run `ctxovrflw login` to set up your sync PIN.\n\
+             Cloud sync requires end-to-end encryption — plaintext sync is not allowed."
+        );
     }
     match cfg.get_cached_key() {
-        Some(key) => Ok(Some(key)),
+        Some(key) => Ok(key),
         None => anyhow::bail!(
             "Sync PIN expired. Run `ctxovrflw login` to re-enter your PIN."
         ),
@@ -60,17 +64,15 @@ pub async fn run(cfg: &Config) -> Result<()> {
     let device_id = cfg.device_id.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no device ID"))?;
     let enc_key = get_encryption_key(cfg)?;
 
-    let pushed = push(cfg, api_key, device_id, enc_key.as_ref()).await?;
-    let pulled = pull(cfg, api_key, device_id, enc_key.as_ref()).await?;
+    let pushed = push(cfg, api_key, device_id, &enc_key).await?;
+    let pulled = pull(cfg, api_key, device_id, &enc_key).await?;
     let purged = purge_tombstones()?;
 
     println!("✓ Sync complete — pushed {pushed}, pulled {pulled}");
     if purged > 0 {
         println!("  🗑️  Purged {purged} old tombstones");
     }
-    if enc_key.is_some() {
-        println!("  🔐 End-to-end encrypted");
-    }
+    println!("  🔐 End-to-end encrypted");
     Ok(())
 }
 
@@ -82,10 +84,16 @@ pub async fn run_silent(cfg: &Config) -> Result<(usize, usize)> {
 
     let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no API key"))?;
     let device_id = cfg.device_id.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no device ID"))?;
-    let enc_key = get_encryption_key(cfg).unwrap_or(None);
+    let enc_key = match get_encryption_key(cfg) {
+        Ok(key) => key,
+        Err(e) => {
+            tracing::warn!("Sync skipped: {e}");
+            return Ok((0, 0));
+        }
+    };
 
-    let pushed = push(cfg, api_key, device_id, enc_key.as_ref()).await?;
-    let pulled = pull(cfg, api_key, device_id, enc_key.as_ref()).await?;
+    let pushed = push(cfg, api_key, device_id, &enc_key).await?;
+    let pulled = pull(cfg, api_key, device_id, &enc_key).await?;
     let _ = purge_tombstones(); // Best-effort cleanup
 
     Ok((pushed, pulled))
@@ -153,7 +161,7 @@ async fn push(
     cfg: &Config,
     api_key: &str,
     device_id: &str,
-    enc_key: Option<&[u8; 32]>,
+    enc_key: &[u8; 32],
 ) -> Result<usize> {
     let conn = db::open()?;
     let client = reqwest::Client::new();
@@ -215,7 +223,7 @@ async fn push(
             .json(&serde_json::json!({
                 "device_id": device_id,
                 "memories": batch,
-                "encrypted": enc_key.is_some(),
+                "encrypted": true,
             }))
             .send()
             .await?;
@@ -260,7 +268,7 @@ async fn pull(
     cfg: &Config,
     api_key: &str,
     device_id: &str,
-    enc_key: Option<&[u8; 32]>,
+    enc_key: &[u8; 32],
 ) -> Result<usize> {
     let client = reqwest::Client::new();
     let resp = client
@@ -297,7 +305,7 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
 
     let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no API key"))?;
     let device_id = cfg.device_id.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no device ID"))?;
-    let enc_key = get_encryption_key(cfg).unwrap_or(None);
+    let enc_key = get_encryption_key(cfg)?;
     let conn = db::open()?;
 
     let mem: Option<serde_json::Value> = conn
@@ -333,13 +341,13 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
     };
 
     // Encrypt content + tags before pushing
-    if let Some(key) = &enc_key {
+    {
         let content = mem["content"].as_str().unwrap_or("");
         let tags: Vec<String> = mem["tags"]
             .as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default();
-        let (enc_content, enc_tags, hash) = encrypt_memory(key, content, &tags)?;
+        let (enc_content, enc_tags, hash) = encrypt_memory(&enc_key, content, &tags)?;
         mem["content"] = serde_json::Value::String(enc_content);
         mem["tags"] = serde_json::json!([enc_tags]);
         mem["content_hash"] = serde_json::Value::String(hash);
@@ -352,7 +360,7 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
         .json(&serde_json::json!({
             "device_id": device_id,
             "memories": [mem],
-            "encrypted": enc_key.is_some(),
+            "encrypted": true,
         }))
         .send()
         .await?;
@@ -374,7 +382,7 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
 /// Returns at most `limit` memories, encrypting content if key is provided.
 fn get_unsynced_memories(
     conn: &rusqlite::Connection,
-    enc_key: Option<&[u8; 32]>,
+    enc_key: &[u8; 32],
     limit: usize,
 ) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
@@ -409,36 +417,21 @@ fn get_unsynced_memories(
 
     let mut result = Vec::with_capacity(memories.len());
     for (id, content, mtype, tags, subject, source, deleted, created_at, updated_at, expires_at) in memories {
-        let mem = if let Some(key) = enc_key {
-            let (enc_content, enc_tags, hash) = encrypt_memory(key, &content, &tags)
-                .map_err(|e| anyhow::anyhow!("Encryption failed for {id}: {e}"))?;
-            serde_json::json!({
-                "id": id,
-                "content": enc_content,
-                "memory_type": mtype,
-                "tags": [enc_tags],
-                "subject": subject,
-                "source": source,
-                "expires_at": expires_at,
-                "deleted": deleted,
-                "created_at": created_at,
-                "updated_at": updated_at,
-                "content_hash": hash,
-            })
-        } else {
-            serde_json::json!({
-                "id": id,
-                "content": content,
-                "memory_type": mtype,
-                "tags": tags,
-                "subject": subject,
-                "source": source,
-                "expires_at": expires_at,
-                "deleted": deleted,
-                "created_at": created_at,
-                "updated_at": updated_at,
-            })
-        };
+        let (enc_content, enc_tags, hash) = encrypt_memory(enc_key, &content, &tags)
+            .map_err(|e| anyhow::anyhow!("Encryption failed for {id}: {e}"))?;
+        let mem = serde_json::json!({
+            "id": id,
+            "content": enc_content,
+            "memory_type": mtype,
+            "tags": [enc_tags],
+            "subject": subject,
+            "source": source,
+            "expires_at": expires_at,
+            "deleted": deleted,
+            "created_at": created_at,
+            "updated_at": updated_at,
+            "content_hash": hash,
+        });
         result.push(mem);
     }
 
@@ -450,28 +443,27 @@ fn get_unsynced_memories(
 fn merge_remote_memories(
     conn: &rusqlite::Connection,
     memories: &[RemoteMemory],
-    enc_key: Option<&[u8; 32]>,
+    enc_key: &[u8; 32],
 ) -> Result<()> {
+    // Load embedder once for all pulled memories (not per-memory)
+    let mut embedder = crate::embed::Embedder::new().ok();
+
     for mem in memories {
-        // Decrypt content if encrypted
-        let (content, tags) = if let Some(key) = enc_key {
-            let decrypted_content = crypto::decrypt_string(key, &mem.content)
-                .unwrap_or_else(|_| mem.content.clone()); // Fallback for unencrypted legacy data
+        // Decrypt content (all cloud data must be encrypted)
+        let decrypted_content = crypto::decrypt_string(enc_key, &mem.content)
+            .unwrap_or_else(|_| mem.content.clone()); // Fallback for legacy plaintext data
 
-            let decrypted_tags = if let Some(enc_tags) = mem.tags.first() {
-                // Tags are stored as a single encrypted JSON string in the array
-                match crypto::decrypt_string(key, enc_tags) {
-                    Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
-                    Err(_) => mem.tags.clone(), // Fallback for unencrypted
-                }
-            } else {
-                vec![]
-            };
-
-            (decrypted_content, decrypted_tags)
+        let decrypted_tags = if let Some(enc_tags) = mem.tags.first() {
+            // Tags are stored as a single encrypted JSON string in the array
+            match crypto::decrypt_string(enc_key, enc_tags) {
+                Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
+                Err(_) => mem.tags.clone(), // Fallback for legacy plaintext
+            }
         } else {
-            (mem.content.clone(), mem.tags.clone())
+            vec![]
         };
+
+        let (content, tags) = (decrypted_content, decrypted_tags);
 
         // Check if the memory exists locally and whether it's deleted
         let local_state: Option<(bool,)> = conn
@@ -516,8 +508,8 @@ fn merge_remote_memories(
             )?;
             // Re-embed if content was actually updated
             if rows > 0 {
-                if let Ok(mut embedder) = crate::embed::Embedder::new() {
-                    if let Ok(embedding) = embedder.embed(&content) {
+                if let Some(ref mut emb) = embedder {
+                    if let Ok(embedding) = emb.embed(&content) {
                         let _ = conn.execute(
                             "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",
                             rusqlite::params![mem.id, crate::db::memories::bytemuck_cast_pub(&embedding)],
@@ -533,8 +525,8 @@ fn merge_remote_memories(
             )?;
 
             // Generate embedding for the new memory
-            if let Ok(mut embedder) = crate::embed::Embedder::new() {
-                if let Ok(embedding) = embedder.embed(&content) {
+            if let Some(ref mut emb) = embedder {
+                if let Ok(embedding) = emb.embed(&content) {
                     let _ = conn.execute(
                         "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",
                         rusqlite::params![mem.id, crate::db::memories::bytemuck_cast_pub(&embedding)],

@@ -92,8 +92,12 @@ pub fn semantic_search(
          AND (m.expires_at IS NULL OR m.expires_at > datetime('now'))",
     )?;
 
+    // Fetch more candidates than requested to allow for score filtering.
+    // sqlite-vec's k parameter limits the KNN search, so we need headroom.
+    let k = (limit * 4).max(20).min(200);
+
     let results: Vec<(Memory, f64)> = stmt
-        .query_map(params![embedding_bytes, limit], |row| {
+        .query_map(params![embedding_bytes, k], |row| {
             let distance: f64 = row.get(1)?;
             let score = 1.0 - (distance * distance / 2.0);
             Ok((
@@ -117,7 +121,10 @@ pub fn semantic_search(
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     // Filter out low-relevance results (noise)
-    let filtered = results.into_iter().filter(|(_, score)| *score >= MIN_SEMANTIC_SCORE).collect();
+    let filtered: Vec<_> = results.into_iter()
+        .filter(|(_, score)| *score >= MIN_SEMANTIC_SCORE)
+        .take(limit)
+        .collect();
     Ok(filtered)
 }
 
