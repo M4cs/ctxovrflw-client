@@ -30,7 +30,13 @@ async fn main() -> anyhow::Result<()> {
     let cfg = config::Config::load()?;
 
     match cli.command {
-        Command::Init => cli::init::run(&cfg).await,
+        Command::Init => {
+            if atty::is(atty::Stream::Stdout) {
+                cli::init_tui::run(&cfg).await
+            } else {
+                cli::init::run(&cfg).await
+            }
+        }
         Command::Start { port, foreground } => daemon::start(&cfg, port, foreground).await,
         Command::Stop => daemon::stop(&cfg).await,
         Command::Status => cli::status::run(&cfg).await,

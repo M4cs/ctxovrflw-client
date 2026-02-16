@@ -8,19 +8,19 @@ use crate::config::Config;
 // ── Agent Registry ───────────────────────────────────────────
 
 #[derive(Debug, Clone)]
-struct AgentDef {
-    name: &'static str,
-    detect: DetectMethod,
+pub(crate) struct AgentDef {
+    pub(crate) name: &'static str,
+    pub(crate) detect: DetectMethod,
     /// Config paths for JSON-based MCP config (global/user level)
-    config_paths: &'static [ConfigLocation],
+    pub(crate) config_paths: &'static [ConfigLocation],
     /// Uses CLI command for install instead of JSON config
-    cli_install: Option<&'static str>,
+    pub(crate) cli_install: Option<&'static str>,
     /// Global rules file path (relative to home dir)
-    global_rules_path: Option<&'static str>,
+    pub(crate) global_rules_path: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]
-enum DetectMethod {
+pub(crate) enum DetectMethod {
     Binary(&'static str),
     Dir(&'static str),
     ConfigDir(&'static str),
@@ -28,14 +28,14 @@ enum DetectMethod {
 }
 
 #[derive(Debug, Clone)]
-enum ConfigLocation {
+pub(crate) enum ConfigLocation {
     Home(&'static str),
     Config(&'static str),
     MacApp(&'static str),
     AppData(&'static str),
 }
 
-const AGENTS: &[AgentDef] = &[
+pub(crate) const AGENTS: &[AgentDef] = &[
     AgentDef {
         name: "Claude Code",
         detect: DetectMethod::Binary("claude"),
@@ -186,12 +186,12 @@ const AGENTS: &[AgentDef] = &[
 
 // ── Detection ────────────────────────────────────────────────
 
-struct DetectedAgent {
-    def: &'static AgentDef,
-    config_path: Option<PathBuf>,
+pub(crate) struct DetectedAgent {
+    pub(crate) def: &'static AgentDef,
+    pub(crate) config_path: Option<PathBuf>,
 }
 
-fn detect_agents() -> Vec<DetectedAgent> {
+pub(crate) fn detect_agents() -> Vec<DetectedAgent> {
     let home = dirs::home_dir().unwrap_or_default();
     let config_dir = dirs::config_dir().unwrap_or_default();
     let mut found = Vec::new();
@@ -223,7 +223,7 @@ fn detect_agents() -> Vec<DetectedAgent> {
     found
 }
 
-fn resolve_config_path(loc: &ConfigLocation) -> PathBuf {
+pub(crate) fn resolve_config_path(loc: &ConfigLocation) -> PathBuf {
     let home = dirs::home_dir().unwrap_or_default();
     let config_dir = dirs::config_dir().unwrap_or_default();
     match loc {
@@ -236,7 +236,7 @@ fn resolve_config_path(loc: &ConfigLocation) -> PathBuf {
     }
 }
 
-fn which(cmd: &str) -> bool {
+pub(crate) fn which(cmd: &str) -> bool {
     std::process::Command::new("which")
         .arg(cmd)
         .stdout(std::process::Stdio::null())
@@ -248,7 +248,7 @@ fn which(cmd: &str) -> bool {
 
 // ── Installation ─────────────────────────────────────────────
 
-fn mcp_sse_url(cfg: &Config) -> String {
+pub(crate) fn mcp_sse_url(cfg: &Config) -> String {
     if let Some(ref remote) = cfg.remote_daemon_url {
         format!("{}/mcp/sse", remote.trim_end_matches('/'))
     } else {
@@ -256,7 +256,7 @@ fn mcp_sse_url(cfg: &Config) -> String {
     }
 }
 
-fn sse_mcp_json(cfg: &Config) -> serde_json::Value {
+pub(crate) fn sse_mcp_json(cfg: &Config) -> serde_json::Value {
     serde_json::json!({
         "url": mcp_sse_url(cfg)
     })
@@ -311,7 +311,7 @@ fn install_agent(agent: &DetectedAgent, cfg: &Config) -> Result<()> {
     write_mcp_config(&config_path, &mcp_entry, agent.def.name)
 }
 
-fn write_mcp_config(
+pub(crate) fn write_mcp_config(
     path: &PathBuf,
     mcp_entry: &serde_json::Value,
     agent_name: &str,
@@ -356,9 +356,9 @@ fn write_mcp_config(
 
 // ── Agent Rules Installation ─────────────────────────────────
 
-const CTXOVRFLW_RULES_MARKER: &str = "## Memory (ctxovrflw)";
+pub(crate) const CTXOVRFLW_RULES_MARKER: &str = "## Memory (ctxovrflw)";
 
-fn ctxovrflw_rules_content() -> &'static str {
+pub(crate) fn ctxovrflw_rules_content() -> &'static str {
     r#"
 ## Memory (ctxovrflw)
 
@@ -508,7 +508,7 @@ fn install_agent_rules(agents: &[&DetectedAgent]) -> Result<()> {
 }
 
 /// Replace the ctxovrflw section in existing content, preserving everything else.
-fn replace_ctxovrflw_section(content: &str, new_rules: &str) -> String {
+pub(crate) fn replace_ctxovrflw_section(content: &str, new_rules: &str) -> String {
     if let Some(start) = content.find(CTXOVRFLW_RULES_MARKER) {
         // Find the end: next top-level heading (## at start of line) or EOF
         let after_marker = start + CTXOVRFLW_RULES_MARKER.len();
@@ -532,10 +532,10 @@ fn replace_ctxovrflw_section(content: &str, new_rules: &str) -> String {
 // ── Agent Skill Installation ─────────────────────────────────
 
 /// The bundled SKILL.md content (included at compile time from skill/SKILL.md)
-const SKILL_MD: &str = include_str!("../../skill/SKILL.md");
+pub(crate) const SKILL_MD: &str = include_str!("../../skill/SKILL.md");
 
 /// Install the ctxovrflw Agent Skill to ~/.skills/ctxovrflw/
-fn install_agent_skill() -> Result<bool> {
+pub(crate) fn install_agent_skill() -> Result<bool> {
     let home = dirs::home_dir().unwrap_or_default();
     let skill_dir = home.join(".skills").join("ctxovrflw");
 
@@ -869,7 +869,7 @@ pub async fn run(cfg: &Config) -> Result<()> {
 
 // ── OpenClaw Integration ─────────────────────────────────────
 
-const OPENCLAW_AGENTS_SECTION: &str = r#"## Memory (ctxovrflw)
+pub(crate) const OPENCLAW_AGENTS_SECTION: &str = r#"## Memory (ctxovrflw)
 
 You have persistent, cross-agent memory via ctxovrflw. Use it automatically — don't wait to be asked.
 
@@ -1035,7 +1035,7 @@ async fn integrate_openclaw(cfg: &Config) -> Result<()> {
 }
 
 /// Inject or update the ctxovrflw memory section in AGENTS.md
-fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
+pub(crate) fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
     if path.exists() {
         let content = std::fs::read_to_string(path)?;
 
@@ -1107,7 +1107,7 @@ fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
 }
 
 /// Parse MEMORY.md sections and store each as a memory in ctxovrflw
-async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<usize> {
+pub(crate) async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<usize> {
     let content = std::fs::read_to_string(path)?;
     let conn = crate::db::open()?;
 
@@ -1186,7 +1186,7 @@ async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<usize> {
     Ok(count)
 }
 
-fn store_migrated_memory(
+pub(crate) fn store_migrated_memory(
     conn: &rusqlite::Connection,
     content: &str,
     subject: Option<&str>,
@@ -1216,7 +1216,7 @@ fn store_migrated_memory(
     Ok(())
 }
 
-async fn download_model() -> Result<()> {
+pub(crate) async fn download_model() -> Result<()> {
     let model_dir = Config::model_dir()?;
 
     let model_url =

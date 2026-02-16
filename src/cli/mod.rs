@@ -1,6 +1,7 @@
 pub mod account;
 pub mod forget;
 pub mod init;
+pub mod init_tui;
 pub mod login;
 pub mod logout;
 pub mod memories;
