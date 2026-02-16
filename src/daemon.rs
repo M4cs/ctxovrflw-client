@@ -6,6 +6,15 @@ use crate::config::Config;
 // ── Daemon lifecycle ─────────────────────────────────────────
 
 pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
+    if cfg.is_remote_client() {
+        println!("This instance is configured to use a remote daemon at:");
+        println!("  {}", cfg.daemon_url());
+        println!();
+        println!("To start a local daemon instead, remove `remote_daemon_url` from config.toml");
+        println!("  Config: {}", Config::config_path()?.display());
+        return Ok(());
+    }
+
     if !foreground {
         // If systemd service is installed, use that
         if is_service_installed() {

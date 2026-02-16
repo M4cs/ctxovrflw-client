@@ -248,16 +248,28 @@ fn which(cmd: &str) -> bool {
 
 // ── Installation ─────────────────────────────────────────────
 
-fn sse_mcp_json(port: u16) -> serde_json::Value {
+fn mcp_sse_url(cfg: &Config) -> String {
+    if let Some(ref remote) = cfg.remote_daemon_url {
+        format!("{}/mcp/sse", remote.trim_end_matches('/'))
+    } else {
+        format!("http://127.0.0.1:{}/mcp/sse", cfg.port)
+    }
+}
+
+fn sse_mcp_json(cfg: &Config) -> serde_json::Value {
     serde_json::json!({
-        "url": format!("http://127.0.0.1:{port}/mcp/sse")
+        "url": mcp_sse_url(cfg)
     })
 }
 
-fn install_agent(agent: &DetectedAgent, port: u16) -> Result<()> {
+fn install_agent(agent: &DetectedAgent, cfg: &Config) -> Result<()> {
+    let url = mcp_sse_url(cfg);
+
     // CLI-based install (e.g., Claude Code)
     if let Some(cmd_template) = agent.def.cli_install {
-        let cmd = cmd_template.replace("{port}", &port.to_string());
+        let cmd = cmd_template
+            .replace("{port}", &cfg.port.to_string())
+            .replace("http://127.0.0.1:{port}/mcp/sse", &url);
         println!("  {} {}", style("→").dim(), style(&cmd).dim());
         let parts: Vec<&str> = cmd.split_whitespace().collect();
         if parts.len() >= 2 {
@@ -286,12 +298,12 @@ fn install_agent(agent: &DetectedAgent, port: u16) -> Result<()> {
             style("ℹ").blue(),
             agent.def.name
         );
-        println!("    http://127.0.0.1:{port}/mcp/sse");
+        println!("    {url}");
         return Ok(());
     }
 
     // JSON config file
-    let mcp_entry = sse_mcp_json(port);
+    let mcp_entry = sse_mcp_json(cfg);
     let config_path = agent.config_path.clone().unwrap_or_else(|| {
         resolve_config_path(&agent.def.config_paths[0])
     });
@@ -627,9 +639,8 @@ pub async fn run(cfg: &Config) -> Result<()> {
             println!("  {} No tools selected", style("→").dim());
         } else {
             println!();
-            let port = cfg.port;
             for &idx in &sels {
-                if let Err(e) = install_agent(&agents[idx], port) {
+                if let Err(e) = install_agent(&agents[idx], cfg) {
                     println!(
                         "  {} {} — {}",
                         style("✗").red(),
@@ -643,17 +654,30 @@ pub async fn run(cfg: &Config) -> Result<()> {
             println!(
                 "  {} tools connect via {}",
                 style("ℹ").blue(),
-                style(format!("http://127.0.0.1:{port}/mcp/sse")).underlined()
+                style(mcp_sse_url(cfg)).underlined()
             );
         }
         sels
     };
 
-    // 5b. Agent rules files
+    // 5b. OpenClaw-specific integration (if detected and selected)
     if !selections.is_empty() {
         let selected_agents: Vec<&DetectedAgent> = selections.iter().map(|&idx| &agents[idx]).collect();
-        if let Err(e) = install_agent_rules(&selected_agents) {
-            println!("  {} Rules install failed: {e}", style("⚠").yellow());
+        let openclaw_selected = selected_agents.iter().any(|a| a.def.name == "OpenClaw");
+        if openclaw_selected {
+            if let Err(e) = integrate_openclaw(cfg).await {
+                println!("  {} OpenClaw integration failed: {e}", style("⚠").yellow());
+            }
+        }
+
+        // 5c. Agent rules files (for non-OpenClaw agents; OpenClaw handled above)
+        let non_openclaw: Vec<&DetectedAgent> = selected_agents.into_iter()
+            .filter(|a| a.def.name != "OpenClaw")
+            .collect();
+        if !non_openclaw.is_empty() {
+            if let Err(e) = install_agent_rules(&non_openclaw) {
+                println!("  {} Rules install failed: {e}", style("⚠").yellow());
+            }
         }
     }
 
@@ -665,31 +689,123 @@ pub async fn run(cfg: &Config) -> Result<()> {
         Err(e) => println!("  {} Skill install failed: {e}", style("⚠").yellow()),
     }
 
-    // 7. Service installation
+    // 7. Service installation (or remote daemon)
     println!();
-    if !crate::daemon::is_service_installed() {
-        let install_service = Confirm::new()
-            .with_prompt("  Install as background service? (recommended)")
-            .default(true)
+    if cfg.is_remote_client() {
+        println!(
+            "  {} Using remote daemon at {}",
+            style("✓").green().bold(),
+            style(cfg.daemon_url()).underlined()
+        );
+    } else if !crate::daemon::is_service_installed() {
+        println!("  {}", style("Daemon Setup").bold());
+        println!(
+            "  {}",
+            style("ctxovrflw needs a running daemon for MCP and HTTP access.").dim()
+        );
+        println!();
+
+        let options = vec![
+            "Install as background service (recommended)",
+            "Connect to an existing remote daemon",
+            "Skip for now",
+        ];
+
+        let selection = dialoguer::Select::new()
+            .with_prompt("  How would you like to run the daemon?")
+            .items(&options)
+            .default(0)
             .interact()?;
 
-        if install_service {
-            if let Err(e) = crate::daemon::service_install() {
-                println!("  {} Service install failed: {e}", style("⚠").yellow());
-            } else {
-                // Start now?
-                let start_now = Confirm::new()
-                    .with_prompt("  Start the daemon now?")
-                    .default(true)
-                    .interact()?;
+        match selection {
+            0 => {
+                // Local service
+                if let Err(e) = crate::daemon::service_install() {
+                    println!("  {} Service install failed: {e}", style("⚠").yellow());
+                } else {
+                    let start_now = Confirm::new()
+                        .with_prompt("  Start the daemon now?")
+                        .default(true)
+                        .interact()?;
 
-                if start_now {
-                    if let Err(e) = crate::daemon::service_start() {
-                        println!("  {} {e}", style("⚠").yellow());
-                    } else {
-                        println!("  {} Daemon running on port {}", style("✓").green().bold(), cfg.port);
+                    if start_now {
+                        if let Err(e) = crate::daemon::service_start() {
+                            println!("  {} {e}", style("⚠").yellow());
+                        } else {
+                            println!(
+                                "  {} Daemon running on port {}",
+                                style("✓").green().bold(),
+                                cfg.port
+                            );
+                        }
                     }
                 }
+            }
+            1 => {
+                // Remote daemon
+                println!();
+                println!(
+                    "  {}",
+                    style("Enter the URL of the remote daemon (e.g. http://192.168.1.100:7437)").dim()
+                );
+                let url: String = dialoguer::Input::new()
+                    .with_prompt("  Remote daemon URL")
+                    .default(format!("http://127.0.0.1:{}", cfg.port))
+                    .interact_text()?;
+
+                // Validate connectivity
+                print!("  {} Testing connection...", style("→").dim());
+                let test_url = format!("{}/v1/health", url.trim_end_matches('/'));
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(5))
+                    .build()?;
+                match client.get(&test_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        println!(" {}", style("connected ✓").green().bold());
+                        let mut updated_cfg = cfg.clone();
+                        updated_cfg.remote_daemon_url = Some(url.trim_end_matches('/').to_string());
+                        updated_cfg.save()?;
+                        println!(
+                            "  {} Config saved — this instance will use the remote daemon",
+                            style("✓").green()
+                        );
+                        println!(
+                            "  {}",
+                            style("No local daemon will be started on this machine.").dim()
+                        );
+                    }
+                    Ok(resp) => {
+                        println!(" {}", style(format!("HTTP {}", resp.status())).red());
+                        println!(
+                            "  {} Daemon responded but may not be healthy. Saved anyway.",
+                            style("⚠").yellow()
+                        );
+                        let mut updated_cfg = cfg.clone();
+                        updated_cfg.remote_daemon_url = Some(url.trim_end_matches('/').to_string());
+                        updated_cfg.save()?;
+                    }
+                    Err(e) => {
+                        println!(" {}", style("failed ✗").red());
+                        println!("  {} {e}", style("⚠").yellow());
+                        println!(
+                            "  {}",
+                            style("Make sure the remote daemon is running and reachable.").dim()
+                        );
+                        let save_anyway = Confirm::new()
+                            .with_prompt("  Save this URL anyway? (you can fix it later)")
+                            .default(false)
+                            .interact()?;
+                        if save_anyway {
+                            let mut updated_cfg = cfg.clone();
+                            updated_cfg.remote_daemon_url =
+                                Some(url.trim_end_matches('/').to_string());
+                            updated_cfg.save()?;
+                        }
+                    }
+                }
+            }
+            _ => {
+                println!("  {} Skipped. Run later: {}", style("→").dim(), style("ctxovrflw init").bold());
             }
         }
     } else {
@@ -747,6 +863,355 @@ pub async fn run(cfg: &Config) -> Result<()> {
     println!("    ctxovrflw start / stop / status");
     println!("    ctxovrflw init  {}", style("(re-run setup)").dim());
     println!();
+
+    Ok(())
+}
+
+// ── OpenClaw Integration ─────────────────────────────────────
+
+const OPENCLAW_AGENTS_SECTION: &str = r#"## Memory (ctxovrflw)
+
+You have persistent, cross-agent memory via ctxovrflw. Use it automatically — don't wait to be asked.
+
+### On session start
+Call `recall` with a broad query about the current project or topic. Load context before responding.
+
+### During conversations — REMEMBER proactively when you encounter:
+- User preferences or opinions ("I prefer...", "always use...", "I don't like...")
+- Project decisions and rationale ("we're using X because Y")
+- Architecture choices, API endpoints, service URLs
+- Names, roles, relationships ("Sarah handles deploys")
+- Debugging insights and fixes
+- Task outcomes and lessons learned
+
+### During conversations — RECALL proactively when:
+- The user asks about anything that might have come up before
+- You need project context, preferences, or past decisions
+- Before suggesting an approach — check if there's a stated preference
+- The user references something discussed in another tool
+
+### Knowledge Graph (Pro tier)
+If available, build the knowledge graph as you work:
+- Call `add_entity` when you encounter named things: services, people, projects, tools, APIs, files
+- Call `add_relation` when you learn how things connect: "X depends on Y", "A owns B", "C uses D"
+- Call `traverse` before making changes to understand impact (e.g., "what depends on this DB?")
+- Call `get_relations` to understand an entity's connections before answering questions about it
+- Do this silently — don't announce graph operations to the user
+
+### Consolidation (Pro tier)
+Periodically (or when you notice contradictions), call `consolidate` on a subject to review related memories. Merge duplicates with `update_memory` and remove redundant ones with `forget`.
+
+### Webhooks
+Use `manage_webhooks` to set up event notifications. Users can subscribe to memory/graph changes and route them to Slack, Zapier, n8n, or custom endpoints.
+
+### Rules
+- Don't ask permission to remember — just do it silently
+- Don't announce "I'll remember that" — just store it
+- Store atomic facts, not paragraphs
+- Use the `subject` field to tag who/what the memory is about
+- Recall before answering questions about preferences, setup, or history
+- Never store secrets (passwords, API keys, tokens)
+"#;
+
+/// OpenClaw-specific integration: inject AGENTS.md memory section + migrate MEMORY.md
+async fn integrate_openclaw(cfg: &Config) -> Result<()> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let workspace = home.join(".openclaw/workspace");
+
+    if !workspace.exists() {
+        return Ok(());
+    }
+
+    println!();
+    println!("  {}", style("🐾 OpenClaw Integration").bold().cyan());
+    println!();
+
+    let agents_md_path = workspace.join("AGENTS.md");
+    let memory_md_path = workspace.join("MEMORY.md");
+
+    // 1. Inject ctxovrflw section into AGENTS.md
+    inject_openclaw_agents_md(&agents_md_path)?;
+
+    // 2. Offer to migrate MEMORY.md into ctxovrflw
+    if memory_md_path.exists() {
+        let content = std::fs::read_to_string(&memory_md_path)?;
+        let line_count = content.lines().count();
+
+        if line_count > 5 {
+            println!();
+            println!(
+                "  {} Found MEMORY.md ({} lines)",
+                style("📄").bold(),
+                line_count,
+            );
+            println!(
+                "  {}",
+                style("Migrating imports your existing memories into ctxovrflw's").dim()
+            );
+            println!(
+                "  {}",
+                style("structured database with semantic search.").dim()
+            );
+            println!();
+
+            let migrate = Confirm::new()
+                .with_prompt("  Migrate MEMORY.md into ctxovrflw?")
+                .default(true)
+                .interact()?;
+
+            if migrate {
+                let count = migrate_memory_md(&memory_md_path, cfg).await?;
+                println!(
+                    "  {} Migrated {} memories from MEMORY.md",
+                    style("✓").green().bold(),
+                    count
+                );
+
+                // Backup original
+                let backup = workspace.join("MEMORY.md.pre-ctxovrflw");
+                std::fs::copy(&memory_md_path, &backup)?;
+                println!(
+                    "  {} Original backed up to {}",
+                    style("✓").green(),
+                    style("MEMORY.md.pre-ctxovrflw").dim()
+                );
+
+                // Rewrite MEMORY.md to point to ctxovrflw
+                let stub = format!(
+                    "# MEMORY.md\n\n\
+                    > **This file is no longer the primary memory store.**\n\
+                    > Memories are now managed by ctxovrflw (semantic search, cross-device sync).\n\
+                    > Use `ctxovrflw recall <query>` or the MCP `recall` tool.\n\
+                    > Original content backed up to `MEMORY.md.pre-ctxovrflw`.\n\n\
+                    To browse memories: `ctxovrflw memories`\n\
+                    To search: `ctxovrflw recall \"<query>\"`\n"
+                );
+                std::fs::write(&memory_md_path, stub)?;
+                println!(
+                    "  {} MEMORY.md updated to point to ctxovrflw",
+                    style("✓").green()
+                );
+            }
+        }
+    }
+
+    // 3. Check for memory/ daily logs directory
+    let memory_dir = workspace.join("memory");
+    if memory_dir.exists() {
+        let daily_files: Vec<_> = std::fs::read_dir(&memory_dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .ends_with(".md")
+            })
+            .collect();
+
+        if !daily_files.is_empty() {
+            println!();
+            println!(
+                "  {} Found {} daily memory log(s) in memory/",
+                style("ℹ").blue(),
+                daily_files.len()
+            );
+            println!(
+                "  {}",
+                style("These can coexist — ctxovrflw handles long-term memory,").dim()
+            );
+            println!(
+                "  {}",
+                style("daily logs remain for raw session notes.").dim()
+            );
+        }
+    }
+
+    println!();
+    println!(
+        "  {} OpenClaw will now use ctxovrflw for memory",
+        style("✅").green().bold()
+    );
+
+    Ok(())
+}
+
+/// Inject or update the ctxovrflw memory section in AGENTS.md
+fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
+    if path.exists() {
+        let content = std::fs::read_to_string(path)?;
+
+        if content.contains(CTXOVRFLW_RULES_MARKER) {
+            // Already present — update in place
+            let updated = replace_ctxovrflw_section(&content, OPENCLAW_AGENTS_SECTION);
+            std::fs::write(path, updated)?;
+            println!(
+                "  {} AGENTS.md — ctxovrflw section updated",
+                style("✓").green().bold()
+            );
+        } else {
+            // Find the right place to inject: after ## Memory section if it exists, 
+            // or before ## Safety, or at the end
+            let mut content = content;
+
+            // Remove old memory-related sections that ctxovrflw replaces
+            let old_sections = [
+                "## Memory\n",
+                "## 🧠 MEMORY.md",
+                "## 📝 Write It Down",
+            ];
+            for marker in &old_sections {
+                if let Some(start) = content.find(marker) {
+                    // Find next ## heading or end
+                    let after = start + marker.len();
+                    let end = content[after..]
+                        .find("\n## ")
+                        .map(|pos| after + pos + 1)
+                        .unwrap_or(content.len());
+                    content = format!("{}{}", &content[..start], &content[end..]);
+                }
+            }
+
+            // Insert ctxovrflw section before ## Safety (if exists) or at end
+            if let Some(pos) = content.find("\n## Safety") {
+                let insert_pos = pos + 1;
+                content.insert_str(insert_pos, &format!("{OPENCLAW_AGENTS_SECTION}\n"));
+            } else {
+                if !content.ends_with('\n') {
+                    content.push('\n');
+                }
+                content.push_str(OPENCLAW_AGENTS_SECTION);
+            }
+
+            std::fs::write(path, content)?;
+            println!(
+                "  {} AGENTS.md — ctxovrflw memory section injected",
+                style("✓").green().bold()
+            );
+        }
+    } else {
+        // No AGENTS.md — create a minimal one
+        let content = format!(
+            "# AGENTS.md - Your Workspace\n\n\
+            {OPENCLAW_AGENTS_SECTION}"
+        );
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)?;
+        println!(
+            "  {} AGENTS.md created with ctxovrflw memory config",
+            style("✓").green().bold()
+        );
+    }
+
+    Ok(())
+}
+
+/// Parse MEMORY.md sections and store each as a memory in ctxovrflw
+async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<usize> {
+    let content = std::fs::read_to_string(path)?;
+    let conn = crate::db::open()?;
+
+    // Try to load embedder for semantic search
+    let mut embedder = crate::embed::Embedder::new().ok();
+
+    let mut count = 0;
+    let mut current_section = String::new();
+    let mut current_subject: Option<String> = None;
+    let mut buffer = String::new();
+
+    for line in content.lines() {
+        if line.starts_with("## ") {
+            // Flush previous section
+            if !buffer.trim().is_empty() {
+                store_migrated_memory(
+                    &conn,
+                    &buffer,
+                    current_subject.as_deref(),
+                    embedder.as_mut(),
+                )?;
+                count += 1;
+            }
+            buffer.clear();
+            current_section = line[3..].trim().to_string();
+            current_subject = Some(current_section.clone());
+        } else if line.starts_with("### ") {
+            // Sub-section: flush and start new memory
+            if !buffer.trim().is_empty() {
+                store_migrated_memory(
+                    &conn,
+                    &buffer,
+                    current_subject.as_deref(),
+                    embedder.as_mut(),
+                )?;
+                count += 1;
+            }
+            buffer.clear();
+            let sub = line[4..].trim();
+            current_subject = if current_section.is_empty() {
+                Some(sub.to_string())
+            } else {
+                Some(format!("{}: {}", current_section, sub))
+            };
+        } else if line.starts_with("- ") && buffer.lines().count() > 3 {
+            // Long bullet list — store current buffer and start fresh
+            if !buffer.trim().is_empty() {
+                store_migrated_memory(
+                    &conn,
+                    &buffer,
+                    current_subject.as_deref(),
+                    embedder.as_mut(),
+                )?;
+                count += 1;
+                buffer.clear();
+            }
+            buffer.push_str(line);
+            buffer.push('\n');
+        } else {
+            buffer.push_str(line);
+            buffer.push('\n');
+        }
+    }
+
+    // Flush last buffer
+    if !buffer.trim().is_empty() {
+        store_migrated_memory(
+            &conn,
+            &buffer,
+            current_subject.as_deref(),
+            embedder.as_mut(),
+        )?;
+        count += 1;
+    }
+
+    Ok(count)
+}
+
+fn store_migrated_memory(
+    conn: &rusqlite::Connection,
+    content: &str,
+    subject: Option<&str>,
+    embedder: Option<&mut crate::embed::Embedder>,
+) -> Result<()> {
+    let content = content.trim();
+    if content.is_empty() || content.len() < 10 {
+        return Ok(());
+    }
+
+    // Generate embedding if we have an embedder
+    let embedding = embedder.and_then(|e| e.embed(content).ok());
+
+    let tags = vec!["migrated".to_string(), "memory-md".to_string()];
+
+    crate::db::memories::store_with_expiry(
+        conn,
+        content,
+        &crate::db::memories::MemoryType::Semantic,
+        &tags,
+        subject,
+        Some("openclaw:MEMORY.md"),
+        embedding.as_deref(),
+        None,
+    )?;
 
     Ok(())
 }

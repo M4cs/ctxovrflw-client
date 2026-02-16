@@ -32,7 +32,9 @@ pub async fn run(cfg: &Config) -> Result<()> {
             std::fs::metadata(format!("/proc/{pid}")).ok().map(|_| pid.to_string())
         });
 
-    let daemon_status = if service_running {
+    let daemon_status = if cfg.is_remote_client() {
+        format!("remote → {}", cfg.daemon_url())
+    } else if service_running {
         "running (systemd) ✓".to_string()
     } else if let Some(pid) = &pid_running {
         format!("running (pid {pid})")
@@ -42,11 +44,16 @@ pub async fn run(cfg: &Config) -> Result<()> {
 
     println!("Version:         v{}", env!("CARGO_PKG_VERSION"));
     println!("Daemon:          {daemon_status}");
-    if service_running || pid_running.is_some() {
+    if cfg.is_remote_client() {
+        println!("  REST API:      {}/v1/", cfg.daemon_url());
+        println!("  MCP SSE:       {}/mcp/sse", cfg.daemon_url());
+    } else if service_running || pid_running.is_some() {
         println!("  REST API:      http://localhost:{}/v1/", cfg.port);
         println!("  MCP SSE:       http://localhost:{}/mcp/sse", cfg.port);
     }
-    println!("Service:         {}", if service_installed { "installed" } else { "not installed" });
+    if !cfg.is_remote_client() {
+        println!("Service:         {}", if service_installed { "installed" } else { "not installed" });
+    }
     println!();
 
     // Memory stats

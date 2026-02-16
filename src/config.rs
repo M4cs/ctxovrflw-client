@@ -40,6 +40,11 @@ pub struct Config {
     /// When the key was cached (ISO 8601)
     #[serde(default)]
     pub key_cached_at: Option<String>,
+
+    /// Remote daemon URL — if set, this instance is a client that connects
+    /// to an existing daemon instead of running its own.
+    #[serde(default)]
+    pub remote_daemon_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -257,6 +262,22 @@ impl Default for Config {
             pin_verifier: None,
             cached_key: None,
             key_cached_at: None,
+            remote_daemon_url: None,
         }
+    }
+}
+
+impl Config {
+    /// Returns true if this instance should connect to a remote daemon
+    /// instead of running its own.
+    pub fn is_remote_client(&self) -> bool {
+        self.remote_daemon_url.is_some()
+    }
+
+    /// The base URL for the daemon API (local or remote).
+    pub fn daemon_url(&self) -> String {
+        self.remote_daemon_url
+            .clone()
+            .unwrap_or_else(|| format!("http://127.0.0.1:{}", self.port))
     }
 }
