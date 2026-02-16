@@ -38,7 +38,7 @@ pub async fn run(cfg: &Config) -> Result<()> {
         // Still show local stats
         let conn = crate::db::open()?;
         let count = crate::db::memories::count(&conn)?;
-        let max = cfg.tier.max_memories()
+        let max = cfg.effective_max_memories()
             .map(|m| m.to_string())
             .unwrap_or_else(|| "unlimited".to_string());
 
@@ -63,7 +63,9 @@ pub async fn run(cfg: &Config) -> Result<()> {
         return Ok(());
     }
 
-    let profile: ProfileResponse = resp.json().await?;
+    let body: serde_json::Value = resp.json().await?;
+    let cap_token = body.get("capability_token").and_then(|v| v.as_str()).map(String::from);
+    let profile: ProfileResponse = serde_json::from_value(body)?;
     let u = &profile.user;
 
     // Sync tier from cloud → local config if it changed
@@ -72,11 +74,16 @@ pub async fn run(cfg: &Config) -> Result<()> {
         "pro" => Tier::Pro,
         _ => Tier::Free,
     };
-    if cfg.tier != cloud_tier {
+    if cfg.tier != cloud_tier || cap_token.is_some() {
         let mut updated_cfg = Config::load()?;
-        updated_cfg.tier = cloud_tier;
+        updated_cfg.tier = cloud_tier.clone();
+        if let Some(ct) = cap_token {
+            updated_cfg.capability_token = Some(ct);
+        }
         updated_cfg.save()?;
-        println!("  ✓ Tier updated locally: {:?} → {:?}\n", cfg.tier, updated_cfg.tier);
+        if cfg.tier != cloud_tier {
+            println!("  ✓ Tier updated locally: {:?} → {:?}\n", cfg.tier, updated_cfg.tier);
+        }
     }
 
     // Tier display

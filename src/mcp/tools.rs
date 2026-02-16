@@ -139,6 +139,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
     ];
 
     // ── Knowledge Graph tools (Pro tier) ──
+    #[cfg(feature = "pro")]
     if matches!(cfg.tier, Tier::Pro) {
         tools.push(json!({
             "name": "add_entity",
@@ -322,7 +323,8 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
         }));
     }
 
-    // ── Webhook tools (all tiers) ──
+    // ── Webhook tools (Pro tier) ──
+    #[cfg(feature = "pro")]
     tools.push(json!({
         "name": "manage_webhooks",
         "description": "Manage webhook subscriptions for memory and graph events. Webhooks fire HTTP POST to your URL when events occur.\n\nActions: 'list', 'create', 'delete', 'enable', 'disable'.\n\nValid events: memory.created, memory.updated, memory.deleted, entity.created, entity.updated, entity.deleted, relation.created, relation.updated, relation.deleted",
@@ -357,6 +359,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
     }));
 
     // ── Consolidation tool (Pro tier) ──
+    #[cfg(feature = "pro")]
     if matches!(cfg.tier, Tier::Pro) {
         tools.push(json!({
             "name": "consolidate",
@@ -388,6 +391,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
         }
     }));
 
+    #[cfg(feature = "pro")]
     if matches!(cfg.tier, Tier::Pro) {
         tools.push(json!({
             "name": "context",
@@ -456,6 +460,22 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
     let tool_name = params["name"].as_str().unwrap_or("");
     let arguments = &params["arguments"];
 
+    // Pro-tier tools dispatched first when feature is enabled
+    #[cfg(feature = "pro")]
+    match tool_name {
+        "context" => return handle_context(cfg, arguments).await,
+        "add_entity" => return handle_add_entity(arguments).await,
+        "add_relation" => return handle_add_relation(arguments).await,
+        "get_relations" => return handle_get_relations(arguments).await,
+        "traverse" => return handle_traverse(arguments).await,
+        "list_entities" => return handle_list_entities(arguments).await,
+        "delete_entity" => return handle_delete_entity(arguments).await,
+        "delete_relation" => return handle_delete_relation(arguments).await,
+        "manage_webhooks" => return handle_manage_webhooks(arguments).await,
+        "consolidate" => return handle_consolidate(cfg, arguments).await,
+        _ => {}
+    }
+
     match tool_name {
         "remember" => handle_remember(cfg, arguments).await,
         "recall" => handle_recall(cfg, arguments).await,
@@ -463,16 +483,6 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
         "update_memory" => handle_update_memory(cfg, arguments).await,
         "status" => handle_status(cfg).await,
         "subjects" => handle_subjects().await,
-        "context" => handle_context(cfg, arguments).await,
-        "add_entity" => handle_add_entity(arguments).await,
-        "add_relation" => handle_add_relation(arguments).await,
-        "get_relations" => handle_get_relations(arguments).await,
-        "traverse" => handle_traverse(arguments).await,
-        "list_entities" => handle_list_entities(arguments).await,
-        "delete_entity" => handle_delete_entity(arguments).await,
-        "delete_relation" => handle_delete_relation(arguments).await,
-        "manage_webhooks" => handle_manage_webhooks(arguments).await,
-        "consolidate" => handle_consolidate(cfg, arguments).await,
         _ => Ok(json!({
             "content": [{ "type": "text", "text": format!("Unknown tool: {tool_name}") }],
             "isError": true
@@ -545,7 +555,7 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
 
     // Check memory limit
     let count = db::memories::count(&conn)?;
-    if let Some(max) = cfg.tier.max_memories() {
+    if let Some(max) = cfg.effective_max_memories() {
         if count >= max {
             return Ok(json!({
                 "content": [{
@@ -603,7 +613,7 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
         });
     }
 
-    crate::webhooks::fire("memory.created", json!({ "memory": memory }));
+    { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
 
     let expiry_note = match &memory.expires_at {
         Some(e) => format!(" (expires: {e})"),
@@ -670,11 +680,23 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
         match crate::embed::get_or_init() {
             Ok(emb_arc) => match emb_arc.lock().unwrap().embed(query) {
                 Ok(embedding) => {
-                    let hybrid = db::search::hybrid_search(&conn, query, &embedding, fetch_limit)?;
-                    if !hybrid.is_empty() {
-                        (hybrid, SearchMethod::Hybrid)
-                    } else {
-                        (db::search::keyword_search(&conn, query, fetch_limit)?, SearchMethod::Keyword)
+                    #[cfg(feature = "pro")]
+                    {
+                        let hybrid = db::search::hybrid_search(&conn, query, &embedding, fetch_limit)?;
+                        if !hybrid.is_empty() {
+                            (hybrid, SearchMethod::Hybrid)
+                        } else {
+                            (db::search::keyword_search(&conn, query, fetch_limit)?, SearchMethod::Keyword)
+                        }
+                    }
+                    #[cfg(not(feature = "pro"))]
+                    {
+                        let sem = db::search::semantic_search(&conn, &embedding, fetch_limit)?;
+                        if !sem.is_empty() {
+                            (sem, SearchMethod::Semantic)
+                        } else {
+                            (db::search::keyword_search(&conn, query, fetch_limit)?, SearchMethod::Keyword)
+                        }
                     }
                 }
                 Err(_) => (db::search::keyword_search(&conn, query, fetch_limit)?, SearchMethod::Keyword),
@@ -760,7 +782,7 @@ async fn handle_forget(_cfg: &Config, args: &Value) -> Result<Value> {
 
     let deleted = db::memories::delete(&conn, id)?;
     let msg = if deleted {
-        crate::webhooks::fire("memory.deleted", json!({ "memory_id": id }));
+        { #[cfg(feature = "pro")] crate::webhooks::fire("memory.deleted", json!({ "memory_id": id })); }
         format!("Deleted memory {id}.")
     } else {
         format!("Memory {id} not found.")
@@ -865,7 +887,7 @@ async fn handle_update_memory(cfg: &Config, args: &Value) -> Result<Value> {
                 });
             }
 
-            crate::webhooks::fire("memory.updated", json!({ "memory": mem }));
+            { #[cfg(feature = "pro")] crate::webhooks::fire("memory.updated", json!({ "memory": mem })); }
 
             let mut changes = Vec::new();
             if content.is_some() { changes.push("content"); }
@@ -911,14 +933,15 @@ async fn handle_status(cfg: &Config) -> Result<Value> {
                 count,
                 max,
                 if cfg.tier.semantic_search_enabled() { "enabled" } else { "keyword only" },
-                if cfg.tier.cloud_sync_enabled() { "enabled" } else { "disabled" }
+                if cfg.effective_cloud_sync() { "enabled" } else { "disabled" }
             )
         }]
     }))
 }
 
+#[cfg(feature = "pro")]
 async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
-    if !cfg.tier.context_synthesis_enabled() {
+    if !cfg.feature_enabled("context_synthesis") {
         return Ok(json!({
             "content": [{ "type": "text", "text": "Context synthesis requires Pro tier ($20/mo). Upgrade at https://ctxovrflw.dev/pricing" }]
         }));
@@ -1072,8 +1095,9 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
     }))
 }
 
-// ── Knowledge Graph handlers ────────────────────────────────
+// ── Knowledge Graph handlers (Pro tier) ─────────────────────
 
+#[cfg(feature = "pro")]
 async fn handle_add_entity(args: &Value) -> Result<Value> {
     let name = args["name"]
         .as_str()
@@ -1098,6 +1122,7 @@ async fn handle_add_entity(args: &Value) -> Result<Value> {
     }))
 }
 
+#[cfg(feature = "pro")]
 async fn handle_add_relation(args: &Value) -> Result<Value> {
     let source_name = args["source"]
         .as_str()
@@ -1148,6 +1173,7 @@ async fn handle_add_relation(args: &Value) -> Result<Value> {
     }))
 }
 
+#[cfg(feature = "pro")]
 async fn handle_get_relations(args: &Value) -> Result<Value> {
     let entity_name = args["entity"]
         .as_str()
@@ -1199,6 +1225,7 @@ async fn handle_get_relations(args: &Value) -> Result<Value> {
     }))
 }
 
+#[cfg(feature = "pro")]
 async fn handle_traverse(args: &Value) -> Result<Value> {
     let entity_name = args["entity"]
         .as_str()
@@ -1256,6 +1283,7 @@ async fn handle_traverse(args: &Value) -> Result<Value> {
     }))
 }
 
+#[cfg(feature = "pro")]
 async fn handle_list_entities(args: &Value) -> Result<Value> {
     let entity_type = args["type"].as_str();
     let query = args["query"].as_str();
@@ -1288,6 +1316,7 @@ async fn handle_list_entities(args: &Value) -> Result<Value> {
     }))
 }
 
+#[cfg(feature = "pro")]
 async fn handle_delete_entity(args: &Value) -> Result<Value> {
     let entity_name = args["entity"]
         .as_str()
@@ -1323,6 +1352,7 @@ async fn handle_delete_entity(args: &Value) -> Result<Value> {
     }))
 }
 
+#[cfg(feature = "pro")]
 async fn handle_delete_relation(args: &Value) -> Result<Value> {
     let id = args["id"]
         .as_str()
@@ -1344,8 +1374,9 @@ async fn handle_delete_relation(args: &Value) -> Result<Value> {
     }
 }
 
-// ── Webhook handler ─────────────────────────────────────────
+// ── Webhook handler (Pro tier) ───────────────────────────────
 
+#[cfg(feature = "pro")]
 async fn handle_manage_webhooks(args: &Value) -> Result<Value> {
     let action = args["action"]
         .as_str()
@@ -1423,10 +1454,11 @@ async fn handle_manage_webhooks(args: &Value) -> Result<Value> {
     }
 }
 
-// ── Consolidation handler ───────────────────────────────────
+// ── Consolidation handler (Pro tier) ────────────────────────
 
+#[cfg(feature = "pro")]
 async fn handle_consolidate(cfg: &Config, args: &Value) -> Result<Value> {
-    if !cfg.tier.consolidation_enabled() {
+    if !cfg.feature_enabled("consolidation") {
         return Ok(json!({
             "content": [{ "type": "text", "text": "Consolidation requires Pro tier. Upgrade at https://ctxovrflw.dev/pricing" }],
             "isError": true

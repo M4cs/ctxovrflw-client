@@ -1,3 +1,4 @@
+#[cfg(feature = "pro")]
 use std::collections::HashMap;
 
 use anyhow::Result;
@@ -10,6 +11,7 @@ use super::memories::Memory;
 pub const MIN_SEMANTIC_SCORE: f64 = 0.15;
 
 /// RRF constant (k=60 is standard). Higher k reduces the impact of rank position.
+#[cfg(feature = "pro")]
 const RRF_K: f64 = 60.0;
 
 /// Indicates which search method produced the results
@@ -157,6 +159,7 @@ pub fn semantic_search(
     Ok(filtered)
 }
 
+#[cfg(feature = "pro")]
 /// Hybrid search: combines semantic (vector) and keyword (FTS5) results using
 /// Reciprocal Rank Fusion (RRF). This dramatically improves recall quality by
 /// catching results that one method misses but the other finds.
@@ -232,6 +235,7 @@ pub fn hybrid_search(
     Ok(fused)
 }
 
+#[cfg(feature = "pro")]
 /// Extract potential subject/tag matches from a query.
 /// Looks for known subjects and tags that appear as words in the query.
 fn extract_subject_matches(conn: &Connection, query: &str, limit: usize) -> Vec<Memory> {
@@ -272,6 +276,7 @@ fn extract_subject_matches(conn: &Connection, query: &str, limit: usize) -> Vec<
     results
 }
 
+#[cfg(feature = "pro")]
 /// Search memories that have matching tags
 fn search_by_tags(conn: &Connection, query_words: &[&str], limit: usize) -> Result<Vec<Memory>> {
     // SQLite JSON: tags are stored as JSON arrays like '["tag1","tag2"]'

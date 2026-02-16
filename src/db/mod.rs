@@ -1,6 +1,8 @@
+#[cfg(feature = "pro")]
 pub mod graph;
 pub mod memories;
 pub mod search;
+#[cfg(feature = "pro")]
 pub mod webhooks;
 
 use anyhow::Result;
@@ -31,7 +33,9 @@ pub fn open() -> Result<Connection> {
     )?;
 
     migrate(&conn)?;
+    #[cfg(feature = "pro")]
     graph::migrate(&conn)?;
+    #[cfg(feature = "pro")]
     webhooks::migrate(&conn)?;
     Ok(conn)
 }

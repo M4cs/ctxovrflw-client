@@ -1,3 +1,4 @@
+mod capability;
 mod cli;
 mod config;
 mod crypto;
@@ -7,6 +8,7 @@ mod embed;
 mod http;
 mod mcp;
 mod sync;
+#[cfg(feature = "pro")]
 mod webhooks;
 
 use clap::Parser;

@@ -49,6 +49,10 @@ pub struct Config {
     /// to an existing daemon instead of running its own.
     #[serde(default)]
     pub remote_daemon_url: Option<String>,
+
+    /// Cloud-signed capability token for tier enforcement
+    #[serde(default)]
+    pub capability_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -91,16 +95,25 @@ impl Tier {
     }
 
     pub fn context_synthesis_enabled(&self) -> bool {
-        matches!(self, Tier::Pro)
+        #[cfg(feature = "pro")]
+        { matches!(self, Tier::Pro) }
+        #[cfg(not(feature = "pro"))]
+        { false }
     }
 
     #[allow(dead_code)]
     pub fn consolidation_enabled(&self) -> bool {
-        matches!(self, Tier::Pro)
+        #[cfg(feature = "pro")]
+        { matches!(self, Tier::Pro) }
+        #[cfg(not(feature = "pro"))]
+        { false }
     }
 
     pub fn knowledge_graph_enabled(&self) -> bool {
-        matches!(self, Tier::Pro)
+        #[cfg(feature = "pro")]
+        { matches!(self, Tier::Pro) }
+        #[cfg(not(feature = "pro"))]
+        { false }
     }
 }
 
@@ -222,6 +235,44 @@ impl Config {
         self.save()
     }
 
+    /// Verify and decode the capability token, if present and valid.
+    pub fn capability(&self) -> Option<crate::capability::CapabilityPayload> {
+        self.capability_token.as_ref().and_then(|t| {
+            crate::capability::verify_capability_token(t).ok()
+        })
+    }
+
+    /// Check if a feature is enabled, consulting capability token first.
+    /// Falls back to local tier config if no valid token.
+    pub fn feature_enabled(&self, feature: &str) -> bool {
+        if let Some(cap) = self.capability() {
+            return cap.has_feature(feature);
+        }
+        // Fallback to local tier (for offline/free users)
+        match feature {
+            "hybrid_search" => self.tier.cloud_sync_enabled(), // standard+
+            "knowledge_graph" => self.tier.knowledge_graph_enabled(),
+            "webhooks" => self.tier.knowledge_graph_enabled(), // pro only
+            "consolidation" => self.tier.consolidation_enabled(),
+            "context_synthesis" => self.tier.context_synthesis_enabled(),
+            _ => false,
+        }
+    }
+
+    pub fn effective_max_memories(&self) -> Option<usize> {
+        if let Some(cap) = self.capability() {
+            return cap.max_memories;
+        }
+        self.tier.max_memories()
+    }
+
+    pub fn effective_cloud_sync(&self) -> bool {
+        if let Some(cap) = self.capability() {
+            return cap.cloud_sync;
+        }
+        self.tier.cloud_sync_enabled()
+    }
+
     /// Check if zero-knowledge encryption is set up.
     pub fn is_encrypted(&self) -> bool {
         self.pin_verifier.is_some() && self.key_salt.is_some()
@@ -268,6 +319,7 @@ impl Default for Config {
             cached_key: None,
             key_cached_at: None,
             remote_daemon_url: None,
+            capability_token: None,
         }
     }
 }

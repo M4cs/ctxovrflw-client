@@ -15,7 +15,7 @@ pub async fn run(cfg: &Config) -> Result<()> {
 
     let conn = crate::db::open()?;
     let count = crate::db::memories::count(&conn)?;
-    let max = cfg.tier.max_memories()
+    let max = cfg.effective_max_memories()
         .map(|m| m.to_string())
         .unwrap_or_else(|| "unlimited".to_string());
 
@@ -60,7 +60,7 @@ pub async fn run(cfg: &Config) -> Result<()> {
     println!("Tier:            {:?}", cfg.tier);
     println!("Memories:        {}/{}", count, max);
     println!("Semantic search: {}", if cfg.tier.semantic_search_enabled() { "enabled" } else { "keyword only" });
-    println!("Cloud sync:      {}", if cfg.tier.cloud_sync_enabled() { "enabled" } else { "disabled" });
+    println!("Cloud sync:      {}", if cfg.effective_cloud_sync() { "enabled" } else { "disabled" });
     println!();
     println!("Data dir:        {}", Config::data_dir()?.display());
 
@@ -101,12 +101,19 @@ async fn sync_tier_from_cloud(cfg: &Config) -> Result<Option<Config>> {
         _ => Tier::Free,
     };
 
-    if cfg.tier != cloud_tier {
+    let cap_token = body.get("capability_token").and_then(|v| v.as_str()).map(String::from);
+
+    if cfg.tier != cloud_tier || cap_token.is_some() {
         let mut updated = Config::load()?;
         let old_tier = updated.tier.clone();
         updated.tier = cloud_tier;
+        if let Some(ct) = cap_token {
+            updated.capability_token = Some(ct);
+        }
         updated.save()?;
-        println!("  ✓ Tier synced from cloud: {:?} → {:?}\n", old_tier, updated.tier);
+        if old_tier != updated.tier {
+            println!("  ✓ Tier synced from cloud: {:?} → {:?}\n", old_tier, updated.tier);
+        }
         Ok(Some(updated))
     } else {
         Ok(None)

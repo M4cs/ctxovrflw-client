@@ -15,9 +15,21 @@ pub async fn run(cfg: &Config, query: &str, limit: usize) -> Result<()> {
         match crate::embed::Embedder::new() {
             Ok(mut embedder) => match embedder.embed(query) {
                 Ok(embedding) => {
-                    match crate::db::search::hybrid_search(&conn, query, &embedding, limit) {
-                        Ok(r) if !r.is_empty() => (r, SearchMethod::Hybrid),
-                        _ => (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword),
+                    #[cfg(feature = "pro")]
+                    {
+                        match crate::db::search::hybrid_search(&conn, query, &embedding, limit) {
+                            Ok(r) if !r.is_empty() => (r, SearchMethod::Hybrid),
+                            _ => (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword),
+                        }
+                    }
+                    #[cfg(not(feature = "pro"))]
+                    {
+                        let sem = crate::db::search::semantic_search(&conn, &embedding, limit)?;
+                        if !sem.is_empty() {
+                            (sem, SearchMethod::Semantic)
+                        } else {
+                            (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword)
+                        }
                     }
                 }
                 Err(_) => (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword),

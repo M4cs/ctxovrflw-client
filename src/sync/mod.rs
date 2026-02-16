@@ -18,6 +18,8 @@ struct PullResponse {
     memories: Vec<RemoteMemory>,
     #[allow(dead_code)]
     sync_timestamp: String,
+    #[serde(default)]
+    capability_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -288,6 +290,13 @@ async fn pull(
 
     let result: PullResponse = resp.json().await?;
     let count = result.memories.len();
+
+    // Save capability token from pull response (refreshes every sync cycle)
+    if let Some(cap_token) = &result.capability_token {
+        let mut cfg = Config::load()?;
+        cfg.capability_token = Some(cap_token.clone());
+        cfg.save()?;
+    }
 
     if count > 0 {
         let conn = db::open()?;

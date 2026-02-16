@@ -1,6 +1,6 @@
 [package]
 name = "ctxovrflw"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2024"
 description = "Universal AI context layer. One memory, every tool."
 license = "MIT"
@@ -19,6 +19,7 @@ path = "src/main.rs"
 [features]
 default = []
 onnx = ["dep:ort"]
+pro = []
 
 [dependencies]
 # CLI
@@ -83,6 +84,7 @@ atty = "0.2.14"
 tempfile = "3"
 flate2 = "1.1.9"
 tar = "0.4.44"
+ed25519-dalek = { version = "2.2.0", features = ["serde"] }
 
 
 [dev-dependencies]

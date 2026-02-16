@@ -165,12 +165,16 @@ pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) ->
         if let Some(e) = email {
             cfg.email = Some(e);
         }
+        // Save capability token if present
+        if let Some(cap_token) = body.get("capability_token").and_then(|v| v.as_str()) {
+            cfg.capability_token = Some(cap_token.to_string());
+        }
         cfg.save()?;
     }
 
     // Set up sync PIN if cloud sync is available
     let cfg = Config::load()?;
-    if cfg.tier.cloud_sync_enabled() {
+    if cfg.effective_cloud_sync() {
         setup_sync_pin(&cfg).await?;
     } else {
         println!("\n✓ Logged in! Free tier — local-only mode.");

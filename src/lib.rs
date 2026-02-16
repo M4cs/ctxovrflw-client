@@ -1,3 +1,4 @@
+pub mod capability;
 pub mod config;
 pub mod crypto;
 pub mod db;
@@ -5,4 +6,5 @@ pub mod embed;
 pub mod http;
 pub mod mcp;
 pub mod sync;
+#[cfg(feature = "pro")]
 pub mod webhooks;

@@ -7,7 +7,7 @@ pub async fn run(cfg: &Config, text: &str, memory_type: Option<&str>, tags: Vec<
 
     // Check limits
     let count = crate::db::memories::count(&conn)?;
-    if let Some(max) = cfg.tier.max_memories() {
+    if let Some(max) = cfg.effective_max_memories() {
         if count >= max {
             eprintln!("Memory limit reached ({max}). Upgrade: https://ctxovrflw.dev/pricing");
             std::process::exit(1);

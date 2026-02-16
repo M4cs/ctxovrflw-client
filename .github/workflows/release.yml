@@ -98,7 +98,7 @@ jobs:
           fi
           echo "ORT_DYLIB_PATH=$ORT_DYLIB_PATH"
           ls -la "$ORT_DYLIB_PATH"
-          cargo build --release --features onnx --target ${{ matrix.target }}
+          cargo build --release --features onnx,pro --target ${{ matrix.target }}
 
       - name: Download ONNX model
         shell: bash
