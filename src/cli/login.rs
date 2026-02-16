@@ -394,7 +394,14 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
 
         // Verify against the cloud-stored verifier
         if !crypto::verify_pin(&key, &cloud_verifier) {
-            anyhow::bail!("Wrong sync PIN. Must match the PIN set on your first device.");
+            // Clear auth state — failed PIN means this device can't sync
+            let mut bad_cfg = Config::load()?;
+            bad_cfg.api_key = None;
+            bad_cfg.device_id = None;
+            bad_cfg.email = None;
+            bad_cfg.pin_verifier = None;
+            bad_cfg.save()?;
+            anyhow::bail!("Wrong sync PIN. You've been logged out. Run `ctxovrflw login` to try again.");
         }
 
         // Store locally
