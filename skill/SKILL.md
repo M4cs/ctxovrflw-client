@@ -222,6 +222,48 @@ Returns the most relevant results that fit within the budget. Use this to avoid 
 - **Never store secrets**: No passwords, API keys, tokens, or private keys
 - **Don't announce memory ops**: Just remember/recall silently — don't tell the user "I'll remember that"
 
+## Recall Is Free — Use It Liberally
+
+Lookups are **local, fast, and free** — they hit a local SQLite database with ONNX embeddings,
+not an external API. There is zero cost to recalling. When in doubt, recall. Better to check and
+find nothing than to miss context that exists.
+
+**Recall aggressively:**
+- At the start of every session (broad query)
+- Before making any suggestion or recommendation
+- When you're about to do something you've done before
+- When the user mentions any project, person, tool, or concept by name
+- Before writing code — check for conventions, patterns, and past decisions
+- Multiple times per conversation if the topic shifts
+
+**Don't be conservative with recall.** Five recalls that return nothing useful cost less than one
+wrong answer that ignores stored context.
+
+## Learn From Corrections
+
+When the user **corrects you**, that's a high-signal learning moment. Always store the correction:
+
+```
+remember("User corrected: don't use X, use Y instead because Z",
+         type: "preference", tags: ["correction"], subject: "user")
+```
+
+**Examples of corrections to store:**
+- "No, we use pnpm not npm" → remember the package manager preference
+- "That's wrong, the API is at /v2 not /v1" → remember the correct endpoint
+- "Don't suggest that approach, it doesn't work because..." → remember the constraint
+- "I told you before, always use..." → remember the preference AND recall first next time
+- Style/formatting corrections → remember as coding conventions
+- "That's not how we deploy" → remember the correct deployment process
+
+**The pattern:** When corrected → `remember` the correction → `recall` it next time the topic comes up.
+Corrections tagged with `correction` can be recalled later to avoid repeating the same mistake.
+
+**If the user says "I already told you"** — that means you failed to recall. Immediately:
+1. `recall` the topic to find what you missed
+2. `remember` the correction with `tags: ["correction"]`
+3. Apologize briefly and move on with the right information
+
 ## Memory Types
 
 | Type | Use for | Example |

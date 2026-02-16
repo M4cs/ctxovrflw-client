@@ -234,6 +234,26 @@ pub(crate) fn detect_agents() -> Vec<DetectedAgent> {
             DetectMethod::Any(names) => names.iter().any(|n| which(n)),
         };
 
+        // Fallback: if primary detection failed, check if the global rules
+        // directory exists (e.g. ~/.claude for Claude Code, ~/.cline for Cline).
+        // Many tools create their home dir on first use even if the binary
+        // isn't on PATH yet (common on Windows).
+        let detected = detected || def.global_rules_path.map_or(false, |p| {
+            // p is like ".claude/CLAUDE.md" — check if parent dir exists
+            let parent = std::path::Path::new(p).parent().unwrap_or(std::path::Path::new(""));
+            if !parent.as_os_str().is_empty() {
+                home.join(parent).exists()
+            } else {
+                false
+            }
+        });
+
+        // Also check if any config path directory exists
+        let detected = detected || def.config_paths.iter().any(|loc| {
+            let path = resolve_config_path(loc);
+            path.exists()
+        });
+
         if !detected {
             continue;
         }
@@ -956,6 +976,17 @@ Periodically (or when you notice contradictions), call `consolidate` on a subjec
 
 ### Webhooks
 Use `manage_webhooks` to set up event notifications. Users can subscribe to memory/graph changes and route them to Slack, Zapier, n8n, or custom endpoints.
+
+### Recall is free — use it liberally
+Lookups are local, fast, and free (local SQLite + ONNX, no API calls). When in doubt, recall.
+- Recall at session start, before suggestions, when topics shift, when any name/project/tool is mentioned
+- Multiple recalls per conversation is fine — five empty results cost less than one wrong answer
+
+### Learn from corrections
+When the user corrects you, ALWAYS store the correction:
+- `remember("User corrected: X not Y because Z", type: "preference", tags: ["correction"], subject: "user")`
+- Tag corrections with `correction` so they surface on future recalls
+- If the user says "I already told you" — recall the topic immediately, store the correction, don't repeat the mistake
 
 ### Rules
 - Don't ask permission to remember — just do it silently
