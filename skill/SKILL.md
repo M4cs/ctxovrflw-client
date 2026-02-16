@@ -45,9 +45,17 @@ Supports Linux (x64, arm64) and macOS (x64, arm64).
 
 After install:
 ```bash
-ctxovrflw init     # Interactive setup — creates config, starts daemon
+ctxovrflw init -y  # Non-interactive setup — auto-configures everything, starts daemon
 ctxovrflw login    # Authenticate with cloud (optional, needed for sync)
-ctxovrflw start    # Start the daemon as a background service
+```
+
+The `-y` / `--yes` flag runs init non-interactively: creates config, downloads the model,
+detects and configures all AI tools, installs agent rules, sets up the systemd service,
+and starts the daemon — all without prompting. Ideal for agents and scripts.
+
+For interactive setup with a TUI, omit the flag:
+```bash
+ctxovrflw init     # Interactive TUI with step-by-step wizard
 ```
 
 The daemon runs on `http://127.0.0.1:7437` (localhost only) and exposes an MCP SSE endpoint at

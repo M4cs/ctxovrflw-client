@@ -30,8 +30,10 @@ async fn main() -> anyhow::Result<()> {
     let cfg = config::Config::load()?;
 
     match cli.command {
-        Command::Init => {
-            if atty::is(atty::Stream::Stdout) {
+        Command::Init { non_interactive } => {
+            if non_interactive {
+                cli::init_auto::run(&cfg).await
+            } else if atty::is(atty::Stream::Stdout) {
                 cli::init_tui::run(&cfg).await
             } else {
                 cli::init::run(&cfg).await

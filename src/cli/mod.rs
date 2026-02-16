@@ -1,6 +1,7 @@
 pub mod account;
 pub mod forget;
 pub mod init;
+pub mod init_auto;
 pub mod init_tui;
 pub mod login;
 pub mod logout;
@@ -24,7 +25,11 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Command {
     /// First-time setup — detect tools, download models, configure integrations
-    Init,
+    Init {
+        /// Non-interactive mode: accept all defaults, configure all detected tools
+        #[arg(short = 'y', long = "yes", alias = "non-interactive")]
+        non_interactive: bool,
+    },
 
     /// Start the ctxovrflw daemon (MCP server + HTTP API)
     Start {
