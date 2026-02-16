@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use axum::Router;
 use axum::http::{header, Method};
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 

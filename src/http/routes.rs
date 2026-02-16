@@ -179,7 +179,7 @@ async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreReque
 
     // Generate embedding using shared embedder
     let embedding = if let Some(ref emb) = state.embedder {
-        let mut e = emb.lock().await;
+        let mut e = emb.lock().unwrap();
         e.embed(&body.content).ok()
     } else {
         None
@@ -244,6 +244,10 @@ struct RecallRequest {
     max_tokens: Option<usize>,
     #[serde(default)]
     subject: Option<String>,
+    /// Force a specific search method: "keyword", "semantic", or "hybrid" (default).
+    /// Useful for benchmarking tier differences.
+    #[serde(default)]
+    search_method: Option<String>,
 }
 
 fn default_recall_limit() -> usize {
@@ -272,26 +276,56 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
 
     let fetch_limit = if body.max_tokens.is_some() { body.limit.max(20) } else { body.limit };
 
-    let (results, method) = if let Some(ref emb) = state.embedder {
-        let mut embedder = emb.lock().await;
-        match embedder.embed(&body.query) {
-            Ok(embedding) => {
-                drop(embedder); // Release lock before DB query
-                // Hybrid search: combine semantic + keyword via RRF
-                let hybrid = db::search::hybrid_search(&conn, &body.query, &embedding, fetch_limit).unwrap_or_default();
-                if !hybrid.is_empty() {
-                    (hybrid, SearchMethod::Hybrid)
-                } else {
-                    (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+    // Determine forced search method (for benchmarking/tier simulation)
+    let forced_method = body.search_method.as_deref();
+
+    let (results, method) = match forced_method {
+        Some("keyword") => {
+            // Free tier: keyword-only (FTS5)
+            (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+        }
+        Some("semantic") => {
+            // Standard tier: semantic-only (ONNX embeddings)
+            if let Some(ref emb) = state.embedder {
+                let mut embedder = emb.lock().unwrap();
+                match embedder.embed(&body.query) {
+                    Ok(embedding) => {
+                        drop(embedder);
+                        let sem = db::search::semantic_search(&conn, &embedding, fetch_limit).unwrap_or_default();
+                        (sem, SearchMethod::Semantic)
+                    }
+                    Err(_) => {
+                        drop(embedder);
+                        (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+                    }
                 }
-            }
-            Err(_) => {
-                drop(embedder);
+            } else {
                 (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
             }
         }
-    } else {
-        (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+        _ => {
+            // Pro tier (default): hybrid search
+            if let Some(ref emb) = state.embedder {
+                let mut embedder = emb.lock().unwrap();
+                match embedder.embed(&body.query) {
+                    Ok(embedding) => {
+                        drop(embedder);
+                        let hybrid = db::search::hybrid_search(&conn, &body.query, &embedding, fetch_limit).unwrap_or_default();
+                        if !hybrid.is_empty() {
+                            (hybrid, SearchMethod::Hybrid)
+                        } else {
+                            (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+                        }
+                    }
+                    Err(_) => {
+                        drop(embedder);
+                        (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+                    }
+                }
+            } else {
+                (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
+            }
+        }
     };
 
     // Apply token budget if specified
@@ -397,7 +431,7 @@ async fn update_memory(State(state): State<AppState>, Path(id): Path<String>, Js
     // Re-embed if content changed
     let embedding = if let Some(ref c) = body.content {
         if let Some(ref emb) = state.embedder {
-            let mut e = emb.lock().await;
+            let mut e = emb.lock().unwrap();
             e.embed(c).ok()
         } else { None }
     } else { None };

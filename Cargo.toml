@@ -1,6 +1,6 @@
 [package]
 name = "ctxovrflw"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 description = "Universal AI context layer. One memory, every tool."
 license = "MIT"
@@ -81,6 +81,8 @@ chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
 atty = "0.2.14"
 tempfile = "3"
+flate2 = "1.1.9"
+tar = "0.4.44"
 
 
 [dev-dependencies]

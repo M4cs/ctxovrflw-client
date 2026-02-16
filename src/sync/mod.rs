@@ -508,7 +508,7 @@ fn merge_remote_memories(
             )?;
             // Re-embed if content was actually updated
             if rows > 0 {
-                if let Some(ref emb) = embedder { let mut emb = emb.blocking_lock();
+                if let Some(ref emb) = embedder { let mut emb = emb.lock().unwrap();
                     if let Ok(embedding) = emb.embed(&content) {
                         let _ = conn.execute(
                             "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",
@@ -525,7 +525,7 @@ fn merge_remote_memories(
             )?;
 
             // Generate embedding for the new memory
-            if let Some(ref emb) = embedder { let mut emb = emb.blocking_lock();
+            if let Some(ref emb) = embedder { let mut emb = emb.lock().unwrap();
                 if let Ok(embedding) = emb.embed(&content) {
                     let _ = conn.execute(
                         "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",

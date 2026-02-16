@@ -1,7 +1,6 @@
 use anyhow::Result;
 use std::path::PathBuf;
-use std::sync::{Arc, OnceLock};
-use tokio::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::config::Config;
 
@@ -204,18 +203,25 @@ impl Embedder {
             }
         }
 
-        // 2. ~/.ctxovrflw/bin/ (default install.sh location)
+        // 2. ~/.ctxovrflw/ locations
         if let Some(home) = dirs::home_dir() {
             search_paths.push(home.join(".ctxovrflw").join("bin").join(lib_name));
-            // 3. ~/.ctxovrflw/lib/
             search_paths.push(home.join(".ctxovrflw").join("lib").join(lib_name));
-            // 4. ~/.local/lib/ and ~/.local/bin/
+            // 3. ~/.local/
             search_paths.push(home.join(".local").join("lib").join(lib_name));
             search_paths.push(home.join(".local").join("bin").join(lib_name));
+            // 4. ~/.cargo/bin/ (common for Rust devs)
+            search_paths.push(home.join(".cargo").join("bin").join(lib_name));
+            // 5. Downloaded ORT release
+            let ort_version = "1.23.0";
+            let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x64" };
+            let os = if cfg!(target_os = "macos") { "osx" } else { "linux" };
+            search_paths.push(home.join(format!("onnxruntime-{os}-{arch}-{ort_version}")).join("lib").join(lib_name));
         }
 
-        // 5. System paths
+        // 6. System paths
         search_paths.push(PathBuf::from("/usr/local/lib").join(lib_name));
+        search_paths.push(PathBuf::from("/usr/lib").join(lib_name));
 
         for path in &search_paths {
             if path.exists() {

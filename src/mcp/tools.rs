@@ -559,8 +559,8 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
 
     // Generate embedding if semantic search is available
     let embedding = if cfg.tier.semantic_search_enabled() {
-        match crate::embed::Embedder::new() {
-            Ok(mut embedder) => embedder.embed(content).ok(),
+        match crate::embed::get_or_init() {
+            Ok(emb_arc) => emb_arc.lock().unwrap().embed(content).ok(),
             Err(_) => None,
         }
     } else {
@@ -667,8 +667,8 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     let fetch_limit = if max_tokens.is_some() { limit.max(20) } else { limit };
 
     let (results, method) = if cfg.tier.semantic_search_enabled() {
-        match crate::embed::Embedder::new() {
-            Ok(mut embedder) => match embedder.embed(query) {
+        match crate::embed::get_or_init() {
+            Ok(emb_arc) => match emb_arc.lock().unwrap().embed(query) {
                 Ok(embedding) => {
                     let hybrid = db::search::hybrid_search(&conn, query, &embedding, fetch_limit)?;
                     if !hybrid.is_empty() {
@@ -832,9 +832,9 @@ async fn handle_update_memory(cfg: &Config, args: &Value) -> Result<Value> {
     // Re-embed if content changed
     let embedding = if let Some(new_content) = content {
         if cfg.tier.semantic_search_enabled() {
-            crate::embed::Embedder::new()
+            crate::embed::get_or_init()
                 .ok()
-                .and_then(|mut e| e.embed(new_content).ok())
+                .and_then(|arc| arc.lock().unwrap().embed(new_content).ok())
         } else {
             None
         }
@@ -944,7 +944,7 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
 
     if let Some(q) = topic {
         if cfg.tier.semantic_search_enabled() {
-            if let Ok(mut embedder) = crate::embed::Embedder::new() {
+            if let Ok(emb_arc) = crate::embed::get_or_init() { let mut embedder = emb_arc.lock().unwrap();
                 if let Ok(embedding) = embedder.embed(q) {
                     let sem = db::search::semantic_search(&conn, &embedding, 20).unwrap_or_default();
                     for (mem, _score) in sem {
@@ -1453,7 +1453,7 @@ async fn handle_consolidate(cfg: &Config, args: &Value) -> Result<Value> {
 
     // Get by topic (semantic search)
     if let Some(q) = topic {
-        if let Ok(mut embedder) = crate::embed::Embedder::new() {
+        if let Ok(emb_arc) = crate::embed::get_or_init() { let mut embedder = emb_arc.lock().unwrap();
             if let Ok(embedding) = embedder.embed(q) {
                 let sem = db::search::semantic_search(&conn, &embedding, 30).unwrap_or_default();
                 for (mem, _score) in sem {

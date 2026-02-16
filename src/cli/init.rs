@@ -674,6 +674,41 @@ pub async fn run(cfg: &Config) -> Result<()> {
         );
     }
 
+    // 4b. ONNX Runtime library
+    #[cfg(feature = "onnx")]
+    {
+        let ort_installed = std::env::var("ORT_DYLIB_PATH").is_ok() || {
+            // Check if auto-discover would find it
+            let lib_name = if cfg!(target_os = "macos") { "libonnxruntime.dylib" } else { "libonnxruntime.so" };
+            let mut found = false;
+            if let Some(home) = dirs::home_dir() {
+                let paths = [
+                    home.join(".ctxovrflw").join("lib").join(lib_name),
+                    home.join(".ctxovrflw").join("bin").join(lib_name),
+                    home.join(".local").join("lib").join(lib_name),
+                    home.join(".cargo").join("bin").join(lib_name),
+                ];
+                found = paths.iter().any(|p| p.exists());
+            }
+            if !found {
+                // Check system paths
+                found = std::path::Path::new("/usr/local/lib").join(lib_name).exists()
+                    || std::path::Path::new("/usr/lib").join(lib_name).exists();
+            }
+            found
+        };
+
+        if !ort_installed {
+            println!("  {} Downloading ONNX Runtime library...", style("⬇").cyan());
+            match download_ort_runtime().await {
+                Ok(path) => println!("  {} ONNX Runtime installed {}", style("✓").green(), style(format!("({})", path.display())).dim()),
+                Err(e) => println!("  {} ONNX Runtime download failed: {} (semantic search may be unavailable)", style("⚠").yellow(), e),
+            }
+        } else {
+            println!("  {} ONNX Runtime found", style("✓").green());
+        }
+    }
+
     // 5. Detect AI tools
     println!();
     println!("  {}", style("Scanning for AI tools...").bold());
@@ -1398,4 +1433,85 @@ pub(crate) async fn download_model() -> Result<()> {
     std::fs::write(model_dir.join("tokenizer.json"), &tokenizer_bytes)?;
 
     Ok(())
+}
+
+/// Download ONNX Runtime shared library to ~/.ctxovrflw/lib/
+#[cfg(feature = "onnx")]
+async fn download_ort_runtime() -> Result<std::path::PathBuf> {
+    const ORT_VERSION: &str = "1.23.0";
+
+    let (os_name, arch, lib_name) = if cfg!(target_os = "macos") {
+        if cfg!(target_arch = "aarch64") {
+            ("osx", "arm64", "libonnxruntime.dylib")
+        } else {
+            ("osx", "x86_64", "libonnxruntime.dylib")
+        }
+    } else if cfg!(target_os = "windows") {
+        if cfg!(target_arch = "aarch64") {
+            ("win", "arm64", "onnxruntime.dll")
+        } else {
+            ("win", "x64", "onnxruntime.dll")
+        }
+    } else {
+        if cfg!(target_arch = "aarch64") {
+            ("linux", "aarch64", "libonnxruntime.so")
+        } else {
+            ("linux", "x64", "libonnxruntime.so")
+        }
+    };
+
+    let archive_name = format!("onnxruntime-{os_name}-{arch}-{ORT_VERSION}");
+    let ext = if cfg!(target_os = "windows") { "zip" } else { "tgz" };
+    let url = format!(
+        "https://github.com/microsoft/onnxruntime/releases/download/v{ORT_VERSION}/{archive_name}.{ext}"
+    );
+
+    let dest_dir = dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
+        .join(".ctxovrflw")
+        .join("lib");
+    std::fs::create_dir_all(&dest_dir)?;
+
+    let dest_path = dest_dir.join(lib_name);
+    if dest_path.exists() {
+        return Ok(dest_path);
+    }
+
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()?;
+
+    let resp = client.get(&url).send().await?;
+    if !resp.status().is_success() {
+        anyhow::bail!("Failed to download ONNX Runtime: HTTP {} from {}", resp.status(), url);
+    }
+    let bytes = resp.bytes().await?;
+
+    // Extract the shared library from the archive
+    let tmp_dir = tempfile::tempdir()?;
+
+    if ext == "tgz" {
+        let decoder = flate2::read::GzDecoder::new(&bytes[..]);
+        let mut archive = tar::Archive::new(decoder);
+        archive.unpack(tmp_dir.path())?;
+
+        // Find the lib in the extracted archive
+        let lib_in_archive = tmp_dir.path().join(&archive_name).join("lib").join(lib_name);
+        if !lib_in_archive.exists() {
+            // Try with version suffix (e.g., libonnxruntime.so.1.23.0)
+            let versioned = format!("{}.{}", lib_name, ORT_VERSION);
+            let versioned_path = tmp_dir.path().join(&archive_name).join("lib").join(&versioned);
+            if versioned_path.exists() {
+                std::fs::copy(&versioned_path, &dest_path)?;
+            } else {
+                anyhow::bail!("Could not find {} in downloaded archive", lib_name);
+            }
+        } else {
+            std::fs::copy(&lib_in_archive, &dest_path)?;
+        }
+    } else {
+        anyhow::bail!("ZIP extraction not yet implemented for Windows ORT download");
+    }
+
+    Ok(dest_path)
 }
