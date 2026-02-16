@@ -148,12 +148,17 @@ pub async fn run_inner(cfg: &Config, inline: bool, api_key_arg: Option<&str>) ->
     if profile_resp.status().is_success() {
         let body: serde_json::Value = profile_resp.json().await?;
         let tier_str = body["user"]["tier"].as_str().unwrap_or("free");
+        let email = body["user"]["email"].as_str().map(String::from);
         let mut cfg = Config::load()?;
         cfg.tier = match tier_str {
             "standard" => crate::config::Tier::Standard,
             "pro" => crate::config::Tier::Pro,
             _ => crate::config::Tier::Free,
         };
+        // Always save email from profile — critical for PIN key derivation
+        if let Some(e) = email {
+            cfg.email = Some(e);
+        }
         cfg.save()?;
     }
 
@@ -312,7 +317,7 @@ struct PinVerifierResponse {
 /// Set up zero-knowledge sync encryption.
 /// PIN verifier is stored on the cloud account so all devices share the same PIN.
 async fn setup_sync_pin(cfg: &Config) -> Result<()> {
-    let email = cfg.email.as_deref().unwrap_or("unknown");
+    let email = cfg.email.as_deref().ok_or_else(|| anyhow::anyhow!("No email in config — re-run `ctxovrflw login`"))?;
     let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in"))?;
     let client = reqwest::Client::new();
 
