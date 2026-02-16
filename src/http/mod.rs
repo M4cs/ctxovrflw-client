@@ -43,11 +43,11 @@ pub async fn serve(cfg: Config, port: u16) -> Result<()> {
         .allow_headers([header::CONTENT_TYPE, header::AUTHORIZATION])
         .max_age(std::time::Duration::from_secs(86400));
 
-    // Load embedder once at startup — reused for all requests
-    let embedder = match Embedder::new() {
+    // Use the global singleton embedder — shared with sync, MCP, CLI
+    let embedder = match crate::embed::get_or_init() {
         Ok(e) => {
-            tracing::info!("ONNX embedder loaded (model stays in memory)");
-            Some(Arc::new(Mutex::new(e)))
+            tracing::info!("ONNX embedder loaded (global singleton)");
+            Some(e)
         }
         Err(e) => {
             tracing::warn!("Failed to load embedder: {e}. Semantic search unavailable.");

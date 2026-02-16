@@ -445,8 +445,8 @@ fn merge_remote_memories(
     memories: &[RemoteMemory],
     enc_key: &[u8; 32],
 ) -> Result<()> {
-    // Load embedder once for all pulled memories (not per-memory)
-    let mut embedder = crate::embed::Embedder::new().ok();
+    // Use the global singleton embedder (loaded once at startup, shared everywhere)
+    let embedder = crate::embed::get_or_init().ok();
 
     for mem in memories {
         // Decrypt content (all cloud data must be encrypted)
@@ -508,7 +508,7 @@ fn merge_remote_memories(
             )?;
             // Re-embed if content was actually updated
             if rows > 0 {
-                if let Some(ref mut emb) = embedder {
+                if let Some(ref emb) = embedder { let mut emb = emb.blocking_lock();
                     if let Ok(embedding) = emb.embed(&content) {
                         let _ = conn.execute(
                             "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",
@@ -525,7 +525,7 @@ fn merge_remote_memories(
             )?;
 
             // Generate embedding for the new memory
-            if let Some(ref mut emb) = embedder {
+            if let Some(ref emb) = embedder { let mut emb = emb.blocking_lock();
                 if let Ok(embedding) = emb.embed(&content) {
                     let _ = conn.execute(
                         "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",

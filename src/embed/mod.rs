@@ -1,11 +1,27 @@
 use anyhow::Result;
 use std::path::PathBuf;
+use std::sync::{Arc, OnceLock};
+use tokio::sync::Mutex;
 
 use crate::config::Config;
 
 const MODEL_FILENAME: &str = "all-MiniLM-L6-v2-q8.onnx";
 const TOKENIZER_FILENAME: &str = "tokenizer.json";
 pub const EMBEDDING_DIM: usize = 384;
+
+/// Global singleton embedder — loaded once, shared across HTTP, sync, MCP, CLI.
+static GLOBAL_EMBEDDER: OnceLock<Arc<Mutex<Embedder>>> = OnceLock::new();
+
+/// Get or initialize the global embedder singleton.
+/// First call loads the model; subsequent calls return the cached instance.
+pub fn get_or_init() -> Result<Arc<Mutex<Embedder>>> {
+    if let Some(emb) = GLOBAL_EMBEDDER.get() {
+        return Ok(emb.clone());
+    }
+    let emb = Embedder::new()?;
+    let arc = Arc::new(Mutex::new(emb));
+    Ok(GLOBAL_EMBEDDER.get_or_init(|| arc.clone()).clone())
+}
 
 /// Embedding model using ONNX Runtime + all-MiniLM-L6-v2
 /// Only available when compiled with `--features onnx`
