@@ -41,6 +41,18 @@ fn resolve_expiry(ttl: Option<&str>, expires_at: Option<&str>) -> Result<Option<
     Ok(None)
 }
 
+
+
+/// Sanitize error messages to avoid leaking internal paths or implementation details.
+fn sanitize_error(e: &impl std::fmt::Display) -> String {
+    let msg = e.to_string();
+    // Strip file paths
+    if msg.contains('/') || msg.contains("\\\\") {
+        return "Internal error".to_string();
+    }
+    msg
+}
+
 pub fn router() -> Router {
     Router::new()
         .route("/", get(health))
@@ -52,6 +64,17 @@ pub fn router() -> Router {
         .route("/v1/memories/{id}", put(update_memory))
         .route("/v1/memories/{id}", delete(delete_memory))
         .route("/v1/subjects", get(subjects))
+        .route("/v1/entities", get(list_entities_http))
+        .route("/v1/entities", post(create_entity))
+        .route("/v1/entities/{id}", get(get_entity_http))
+        .route("/v1/entities/{id}", delete(delete_entity_http))
+        .route("/v1/relations", post(create_relation))
+        .route("/v1/relations/{entity_id}", get(get_relations_http))
+        .route("/v1/relations/{id}/delete", delete(delete_relation_http))
+        .route("/v1/graph/traverse/{entity_id}", get(traverse_http))
+        .route("/v1/webhooks", get(list_webhooks))
+        .route("/v1/webhooks", post(create_webhook))
+        .route("/v1/webhooks/{id}", delete(delete_webhook))
         .route("/v1/status", get(status))
 }
 
@@ -80,15 +103,60 @@ struct StoreRequest {
     expires_at: Option<String>,
 }
 
+/// Maximum memory content size (100 KB). Prevents unbounded allocation from oversized payloads.
+const MAX_CONTENT_SIZE: usize = 100 * 1024;
+const MAX_TAG_LENGTH: usize = 200;
+const MAX_TAGS: usize = 50;
+const MAX_SUBJECT_LENGTH: usize = 500;
+
+/// Deduplicate and validate tags. Returns cleaned tags or an error message.
+fn validate_tags(tags: &[String]) -> Result<Vec<String>, String> {
+    if tags.len() > MAX_TAGS {
+        return Err(format!("Too many tags ({}). Maximum is {}.", tags.len(), MAX_TAGS));
+    }
+    for tag in tags {
+        if tag.len() > MAX_TAG_LENGTH {
+            return Err(format!("Tag too long ({} chars). Maximum is {} chars.", tag.len(), MAX_TAG_LENGTH));
+        }
+    }
+    let mut deduped: Vec<String> = tags.to_vec();
+    deduped.sort();
+    deduped.dedup();
+    Ok(deduped)
+}
+
+fn validate_subject(subject: Option<&str>) -> Result<(), String> {
+    if let Some(s) = subject {
+        if s.len() > MAX_SUBJECT_LENGTH {
+            return Err(format!("Subject too long ({} chars). Maximum is {} chars.", s.len(), MAX_SUBJECT_LENGTH));
+        }
+    }
+    Ok(())
+}
+
 async fn store_memory(Json(body): Json<StoreRequest>) -> Json<Value> {
+    if body.content.trim().is_empty() {
+        return Json(json!({ "ok": false, "error": "Content cannot be empty" }));
+    }
+    if body.content.len() > MAX_CONTENT_SIZE {
+        return Json(json!({ "ok": false, "error": format!("Content too large ({} bytes). Maximum is {} bytes.", body.content.len(), MAX_CONTENT_SIZE) }));
+    }
+    let tags = match validate_tags(&body.tags) {
+        Ok(t) => t,
+        Err(e) => return Json(json!({ "ok": false, "error": e })),
+    };
+    if let Err(e) = validate_subject(body.subject.as_deref()) {
+        return Json(json!({ "ok": false, "error": e }));
+    }
+
     let cfg = match Config::load() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("Config error: {e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     let conn = match db::open() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("DB error: {e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     // Check memory limit
@@ -124,8 +192,9 @@ async fn store_memory(Json(body): Json<StoreRequest>) -> Json<Value> {
         Err(e) => return Json(json!({ "ok": false, "error": e })),
     };
 
-    match db::memories::store_with_expiry(&conn, &body.content, &mtype, &body.tags, body.subject.as_deref(), Some(source), embedding.as_deref(), expires_at.as_deref()) {
+    match db::memories::store_with_expiry(&conn, &body.content, &mtype, &tags, body.subject.as_deref(), Some(source), embedding.as_deref(), expires_at.as_deref()) {
         Ok(memory) => {
+            crate::webhooks::fire("memory.created", json!({ "memory": memory }));
             // Immediate push to cloud if logged in
             if cfg.is_logged_in() {
                 let id = memory.id.clone();
@@ -275,7 +344,10 @@ async fn delete_memory(Path(id): Path<String>) -> Json<Value> {
     };
 
     match db::memories::delete(&conn, &id) {
-        Ok(true) => Json(json!({ "ok": true })),
+        Ok(true) => {
+            crate::webhooks::fire("memory.deleted", json!({ "memory_id": id }));
+            Json(json!({ "ok": true }))
+        }
         Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
         Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
     }
@@ -300,13 +372,26 @@ struct UpdateRequest {
 async fn update_memory(Path(id): Path<String>, Json(body): Json<UpdateRequest>) -> Json<Value> {
     let cfg = match Config::load() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("Config error: {e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     let conn = match db::open() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("DB error: {e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
+
+    // Validate tags and subject if provided
+    let validated_tags = if let Some(ref tags) = body.tags {
+        match validate_tags(tags) {
+            Ok(t) => Some(t),
+            Err(e) => return Json(json!({ "ok": false, "error": e })),
+        }
+    } else {
+        None
+    };
+    if let Err(e) = validate_subject(body.subject.as_deref()) {
+        return Json(json!({ "ok": false, "error": e }));
+    }
 
     // Resolve expiry
     let expires_at = if body.remove_expiry.unwrap_or(false) {
@@ -336,8 +421,9 @@ async fn update_memory(Path(id): Path<String>, Json(body): Json<UpdateRequest>) 
 
     let expires_ref = expires_at.as_ref().map(|e| e.as_deref());
 
-    match db::memories::update(&conn, &id, body.content.as_deref(), body.tags.as_deref(), subject, expires_ref, embedding.as_deref()) {
+    match db::memories::update(&conn, &id, body.content.as_deref(), validated_tags.as_deref(), subject, expires_ref, embedding.as_deref()) {
         Ok(Some(memory)) => {
+            crate::webhooks::fire("memory.updated", json!({ "memory": memory }));
             if cfg.is_logged_in() {
                 let mid = memory.id.clone();
                 let cfg2 = cfg.clone();
@@ -392,4 +478,249 @@ async fn status() -> Json<Value> {
         "semantic_search": cfg.tier.semantic_search_enabled(),
         "cloud_sync": cfg.tier.cloud_sync_enabled(),
     }))
+}
+
+// ── Knowledge Graph routes ──────────────────────────────────
+
+#[derive(Deserialize)]
+struct CreateEntityRequest {
+    name: String,
+    #[serde(rename = "type", default = "default_entity_type")]
+    entity_type: String,
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
+}
+
+fn default_entity_type() -> String {
+    "generic".to_string()
+}
+
+async fn create_entity(Json(body): Json<CreateEntityRequest>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::graph::upsert_entity(&conn, &body.name, &body.entity_type, body.metadata.as_ref()) {
+        Ok(entity) => {
+            crate::webhooks::fire("entity.created", json!({ "entity": entity }));
+            Json(json!({ "ok": true, "entity": entity }))
+        }
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+#[derive(Deserialize)]
+struct ListEntitiesQuery {
+    #[serde(rename = "type")]
+    entity_type: Option<String>,
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default = "default_entity_limit")]
+    limit: usize,
+    #[serde(default)]
+    offset: usize,
+}
+
+fn default_entity_limit() -> usize {
+    50
+}
+
+async fn list_entities_http(Query(q): Query<ListEntitiesQuery>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    let limit = q.limit.min(200);
+    let entities = if let Some(ref query) = q.query {
+        db::graph::search_entities(&conn, query, q.entity_type.as_deref(), limit)
+    } else {
+        db::graph::list_entities(&conn, q.entity_type.as_deref(), limit, q.offset)
+    };
+    match entities {
+        Ok(entities) => {
+            let total = db::graph::count_entities(&conn).unwrap_or(0);
+            Json(json!({ "ok": true, "entities": entities, "total": total }))
+        }
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+async fn get_entity_http(Path(id): Path<String>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::graph::get_entity(&conn, &id) {
+        Ok(Some(entity)) => Json(json!({ "ok": true, "entity": entity })),
+        Ok(None) => Json(json!({ "ok": false, "error": "Not found" })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+async fn delete_entity_http(Path(id): Path<String>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::graph::delete_entity(&conn, &id) {
+        Ok(true) => {
+            crate::webhooks::fire("entity.deleted", json!({ "entity_id": id }));
+            Json(json!({ "ok": true }))
+        }
+        Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateRelationRequest {
+    source_id: String,
+    target_id: String,
+    relation_type: String,
+    #[serde(default = "default_confidence")]
+    confidence: f64,
+    #[serde(default)]
+    source_memory_id: Option<String>,
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
+}
+
+fn default_confidence() -> f64 {
+    1.0
+}
+
+async fn create_relation(Json(body): Json<CreateRelationRequest>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::graph::upsert_relation(
+        &conn,
+        &body.source_id,
+        &body.target_id,
+        &body.relation_type,
+        body.confidence,
+        body.source_memory_id.as_deref(),
+        body.metadata.as_ref(),
+    ) {
+        Ok(relation) => {
+            crate::webhooks::fire("relation.created", json!({ "relation": relation }));
+            Json(json!({ "ok": true, "relation": relation }))
+        }
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+#[derive(Deserialize)]
+struct GetRelationsQuery {
+    #[serde(default)]
+    relation_type: Option<String>,
+    #[serde(default)]
+    direction: Option<String>,
+}
+
+async fn get_relations_http(Path(entity_id): Path<String>, Query(q): Query<GetRelationsQuery>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    let direction = q.direction.as_deref();
+    match db::graph::get_relations(&conn, &entity_id, q.relation_type.as_deref(), direction) {
+        Ok(relations) => {
+            let results: Vec<Value> = relations
+                .iter()
+                .map(|(rel, source, target)| json!({
+                    "relation": rel,
+                    "source": source,
+                    "target": target,
+                }))
+                .collect();
+            Json(json!({ "ok": true, "relations": results }))
+        }
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+async fn delete_relation_http(Path(id): Path<String>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::graph::delete_relation(&conn, &id) {
+        Ok(true) => {
+            crate::webhooks::fire("relation.deleted", json!({ "relation_id": id }));
+            Json(json!({ "ok": true }))
+        }
+        Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+#[derive(Deserialize)]
+struct TraverseQuery {
+    #[serde(default = "default_max_depth")]
+    max_depth: usize,
+    #[serde(default)]
+    relation_type: Option<String>,
+    #[serde(default)]
+    min_confidence: f64,
+}
+
+fn default_max_depth() -> usize {
+    2
+}
+
+async fn traverse_http(Path(entity_id): Path<String>, Query(q): Query<TraverseQuery>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::graph::traverse(&conn, &entity_id, q.max_depth, q.relation_type.as_deref(), q.min_confidence) {
+        Ok(nodes) => Json(json!({ "ok": true, "nodes": nodes, "total": nodes.len() })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+// ── Webhook routes ──────────────────────────────────────────
+
+async fn list_webhooks() -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::webhooks::list(&conn) {
+        Ok(hooks) => Json(json!({ "ok": true, "webhooks": hooks })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateWebhookRequest {
+    url: String,
+    events: Vec<String>,
+    #[serde(default)]
+    secret: Option<String>,
+}
+
+async fn create_webhook(Json(body): Json<CreateWebhookRequest>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::webhooks::create(&conn, &body.url, &body.events, body.secret.as_deref()) {
+        Ok(hook) => Json(json!({ "ok": true, "webhook": hook })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
+}
+
+async fn delete_webhook(Path(id): Path<String>) -> Json<Value> {
+    let conn = match db::open() {
+        Ok(c) => c,
+        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+    };
+    match db::webhooks::delete(&conn, &id) {
+        Ok(true) => Json(json!({ "ok": true })),
+        Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
+        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+    }
 }

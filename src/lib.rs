@@ -5,3 +5,4 @@ pub mod embed;
 pub mod http;
 pub mod mcp;
 pub mod sync;
+pub mod webhooks;

@@ -1,7 +1,18 @@
 use anyhow::Result;
-use crate::config::Config;
+use crate::config::{Config, Tier};
 
 pub async fn run(cfg: &Config) -> Result<()> {
+    // Sync tier from cloud if logged in
+    let cfg = if cfg.is_logged_in() {
+        match sync_tier_from_cloud(cfg).await {
+            Ok(Some(updated)) => updated,
+            _ => cfg.clone(),
+        }
+    } else {
+        cfg.clone()
+    };
+    let cfg = &cfg;
+
     let conn = crate::db::open()?;
     let count = crate::db::memories::count(&conn)?;
     let max = cfg.tier.max_memories()
@@ -29,10 +40,11 @@ pub async fn run(cfg: &Config) -> Result<()> {
         "stopped".to_string()
     };
 
+    println!("Version:         v{}", env!("CARGO_PKG_VERSION"));
     println!("Daemon:          {daemon_status}");
     if service_running || pid_running.is_some() {
-        println!("  MCP SSE:       http://127.0.0.1:{}/mcp/sse", cfg.port);
-        println!("  REST API:      http://127.0.0.1:{}/v1/", cfg.port);
+        println!("  REST API:      http://localhost:{}/v1/", cfg.port);
+        println!("  MCP SSE:       http://localhost:{}/mcp/sse", cfg.port);
     }
     println!("Service:         {}", if service_installed { "installed" } else { "not installed" });
     println!();
@@ -54,4 +66,42 @@ pub async fn run(cfg: &Config) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Fetch the user's tier from cloud and update local config if it changed.
+/// Returns Some(updated_config) if tier changed, None if no change.
+async fn sync_tier_from_cloud(cfg: &Config) -> Result<Option<Config>> {
+    let api_key = cfg.api_key.as_deref().unwrap();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()?;
+
+    let resp = client
+        .get(format!("{}/v1/auth/profile", cfg.cloud_url))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .send()
+        .await?;
+
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+
+    let body: serde_json::Value = resp.json().await?;
+    let tier_str = body["user"]["tier"].as_str().unwrap_or("free");
+    let cloud_tier = match tier_str {
+        "standard" => Tier::Standard,
+        "pro" => Tier::Pro,
+        _ => Tier::Free,
+    };
+
+    if cfg.tier != cloud_tier {
+        let mut updated = Config::load()?;
+        let old_tier = updated.tier.clone();
+        updated.tier = cloud_tier;
+        updated.save()?;
+        println!("  ✓ Tier synced from cloud: {:?} → {:?}\n", old_tier, updated.tier);
+        Ok(Some(updated))
+    } else {
+        Ok(None)
+    }
 }

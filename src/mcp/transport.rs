@@ -26,6 +26,12 @@ pub async fn read_message<R: tokio::io::AsyncRead + Unpin>(
 
     let length = content_length.ok_or_else(|| anyhow::anyhow!("Missing Content-Length header"))?;
 
+    // Cap message size at 10 MB to prevent unbounded allocation
+    const MAX_MESSAGE_SIZE: usize = 10 * 1024 * 1024;
+    if length > MAX_MESSAGE_SIZE {
+        anyhow::bail!("Message too large: {length} bytes (max {MAX_MESSAGE_SIZE})");
+    }
+
     let mut body = vec![0u8; length];
     reader.read_exact(&mut body).await?;
 

@@ -35,6 +35,7 @@ fn test_db() -> (rusqlite::Connection, tempfile::TempDir) {
             subject     TEXT,
             source      TEXT,
             embedding   BLOB,
+            expires_at  TEXT,
             created_at  TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
             synced_at   TEXT,
@@ -76,6 +77,12 @@ fn test_db() -> (rusqlite::Connection, tempfile::TempDir) {
         ",
     )
     .unwrap();
+
+    // Graph tables
+    ctxovrflw::db::graph::migrate(&conn).unwrap();
+
+    // Webhook tables
+    ctxovrflw::db::webhooks::migrate(&conn).unwrap();
 
     (conn, tmp)
 }
@@ -602,4 +609,442 @@ fn test_memory_type_display() {
     assert_eq!(format!("{}", MemoryType::Episodic), "episodic");
     assert_eq!(format!("{}", MemoryType::Procedural), "procedural");
     assert_eq!(format!("{}", MemoryType::Preference), "preference");
+}
+
+// ============================================================
+// Knowledge Graph Tests
+// ============================================================
+
+#[test]
+fn test_create_entity() {
+    let (conn, _tmp) = test_db();
+
+    let entity = ctxovrflw::db::graph::upsert_entity(&conn, "auth-service", "service", None).unwrap();
+    assert_eq!(entity.name, "auth-service");
+    assert_eq!(entity.entity_type, "service");
+    assert!(!entity.id.is_empty());
+}
+
+#[test]
+fn test_upsert_entity_dedup() {
+    let (conn, _tmp) = test_db();
+
+    let e1 = ctxovrflw::db::graph::upsert_entity(&conn, "PostgreSQL", "database", None).unwrap();
+    let e2 = ctxovrflw::db::graph::upsert_entity(&conn, "PostgreSQL", "database", None).unwrap();
+    assert_eq!(e1.id, e2.id, "Same name+type should return same entity");
+    assert_eq!(ctxovrflw::db::graph::count_entities(&conn).unwrap(), 1);
+}
+
+#[test]
+fn test_entity_different_types() {
+    let (conn, _tmp) = test_db();
+
+    let e1 = ctxovrflw::db::graph::upsert_entity(&conn, "rust", "language", None).unwrap();
+    let e2 = ctxovrflw::db::graph::upsert_entity(&conn, "rust", "game", None).unwrap();
+    assert_ne!(e1.id, e2.id, "Same name, different type = different entity");
+    assert_eq!(ctxovrflw::db::graph::count_entities(&conn).unwrap(), 2);
+}
+
+#[test]
+fn test_entity_with_metadata() {
+    let (conn, _tmp) = test_db();
+
+    let meta = serde_json::json!({"port": 5432, "version": "15"});
+    let entity = ctxovrflw::db::graph::upsert_entity(&conn, "PostgreSQL", "database", Some(&meta)).unwrap();
+    assert_eq!(entity.metadata.unwrap()["port"], 5432);
+}
+
+#[test]
+fn test_entity_validation() {
+    let (conn, _tmp) = test_db();
+
+    // Empty name should fail
+    assert!(ctxovrflw::db::graph::upsert_entity(&conn, "", "service", None).is_err());
+    // Empty type should fail
+    assert!(ctxovrflw::db::graph::upsert_entity(&conn, "test", "", None).is_err());
+}
+
+#[test]
+fn test_find_entity() {
+    let (conn, _tmp) = test_db();
+
+    ctxovrflw::db::graph::upsert_entity(&conn, "auth-service", "service", None).unwrap();
+    ctxovrflw::db::graph::upsert_entity(&conn, "user-service", "service", None).unwrap();
+
+    let found = ctxovrflw::db::graph::find_entity(&conn, "auth-service", Some("service")).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].name, "auth-service");
+
+    let not_found = ctxovrflw::db::graph::find_entity(&conn, "nope", None).unwrap();
+    assert!(not_found.is_empty());
+}
+
+#[test]
+fn test_search_entities() {
+    let (conn, _tmp) = test_db();
+
+    ctxovrflw::db::graph::upsert_entity(&conn, "auth-service", "service", None).unwrap();
+    ctxovrflw::db::graph::upsert_entity(&conn, "user-service", "service", None).unwrap();
+    ctxovrflw::db::graph::upsert_entity(&conn, "PostgreSQL", "database", None).unwrap();
+
+    let results = ctxovrflw::db::graph::search_entities(&conn, "service", None, 10).unwrap();
+    assert_eq!(results.len(), 2);
+
+    let results = ctxovrflw::db::graph::search_entities(&conn, "auth", Some("service"), 10).unwrap();
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn test_list_entities() {
+    let (conn, _tmp) = test_db();
+
+    for i in 0..5 {
+        ctxovrflw::db::graph::upsert_entity(&conn, &format!("entity-{i}"), "test", None).unwrap();
+    }
+
+    let all = ctxovrflw::db::graph::list_entities(&conn, None, 10, 0).unwrap();
+    assert_eq!(all.len(), 5);
+
+    let limited = ctxovrflw::db::graph::list_entities(&conn, None, 3, 0).unwrap();
+    assert_eq!(limited.len(), 3);
+
+    let typed = ctxovrflw::db::graph::list_entities(&conn, Some("test"), 10, 0).unwrap();
+    assert_eq!(typed.len(), 5);
+
+    let empty = ctxovrflw::db::graph::list_entities(&conn, Some("nope"), 10, 0).unwrap();
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn test_delete_entity() {
+    let (conn, _tmp) = test_db();
+
+    let entity = ctxovrflw::db::graph::upsert_entity(&conn, "to-delete", "test", None).unwrap();
+    assert!(ctxovrflw::db::graph::delete_entity(&conn, &entity.id).unwrap());
+    assert_eq!(ctxovrflw::db::graph::count_entities(&conn).unwrap(), 0);
+
+    // Double delete
+    assert!(!ctxovrflw::db::graph::delete_entity(&conn, &entity.id).unwrap());
+}
+
+#[test]
+fn test_create_relation() {
+    let (conn, _tmp) = test_db();
+
+    let auth = ctxovrflw::db::graph::upsert_entity(&conn, "auth-service", "service", None).unwrap();
+    let db_entity = ctxovrflw::db::graph::upsert_entity(&conn, "PostgreSQL", "database", None).unwrap();
+
+    let rel = ctxovrflw::db::graph::upsert_relation(
+        &conn, &auth.id, &db_entity.id, "depends_on", 0.95, None, None,
+    ).unwrap();
+
+    assert_eq!(rel.source_id, auth.id);
+    assert_eq!(rel.target_id, db_entity.id);
+    assert_eq!(rel.relation_type, "depends_on");
+    assert!((rel.confidence - 0.95).abs() < 0.001);
+}
+
+#[test]
+fn test_upsert_relation_dedup() {
+    let (conn, _tmp) = test_db();
+
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+
+    let r1 = ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 0.5, None, None).unwrap();
+    let r2 = ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 0.9, None, None).unwrap();
+
+    assert_eq!(r1.id, r2.id, "Same source+target+type should return same relation");
+    assert!((r2.confidence - 0.9).abs() < 0.001, "Confidence should be updated");
+    assert_eq!(ctxovrflw::db::graph::count_relations(&conn).unwrap(), 1);
+}
+
+#[test]
+fn test_relation_validation() {
+    let (conn, _tmp) = test_db();
+
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+
+    // Non-existent target
+    assert!(ctxovrflw::db::graph::upsert_relation(&conn, &a.id, "fake-id", "uses", 1.0, None, None).is_err());
+
+    // Invalid confidence
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+    assert!(ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 1.5, None, None).is_err());
+    assert!(ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", -0.1, None, None).is_err());
+
+    // Empty relation type
+    assert!(ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "", 1.0, None, None).is_err());
+}
+
+#[test]
+fn test_get_relations() {
+    let (conn, _tmp) = test_db();
+
+    let auth = ctxovrflw::db::graph::upsert_entity(&conn, "auth", "service", None).unwrap();
+    let pg = ctxovrflw::db::graph::upsert_entity(&conn, "postgres", "database", None).unwrap();
+    let redis = ctxovrflw::db::graph::upsert_entity(&conn, "redis", "cache", None).unwrap();
+
+    ctxovrflw::db::graph::upsert_relation(&conn, &auth.id, &pg.id, "depends_on", 1.0, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &auth.id, &redis.id, "uses", 0.8, None, None).unwrap();
+
+    // All relations for auth
+    let rels = ctxovrflw::db::graph::get_relations(&conn, &auth.id, None, None).unwrap();
+    assert_eq!(rels.len(), 2);
+
+    // Filter by type
+    let deps = ctxovrflw::db::graph::get_relations(&conn, &auth.id, Some("depends_on"), None).unwrap();
+    assert_eq!(deps.len(), 1);
+    assert_eq!(deps[0].2.name, "postgres");
+
+    // Outgoing only
+    let out = ctxovrflw::db::graph::get_relations(&conn, &auth.id, None, Some("outgoing")).unwrap();
+    assert_eq!(out.len(), 2);
+
+    // Incoming to postgres
+    let inc = ctxovrflw::db::graph::get_relations(&conn, &pg.id, None, Some("incoming")).unwrap();
+    assert_eq!(inc.len(), 1);
+}
+
+#[test]
+fn test_delete_relation() {
+    let (conn, _tmp) = test_db();
+
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+
+    let rel = ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 1.0, None, None).unwrap();
+    assert!(ctxovrflw::db::graph::delete_relation(&conn, &rel.id).unwrap());
+    assert_eq!(ctxovrflw::db::graph::count_relations(&conn).unwrap(), 0);
+}
+
+#[test]
+fn test_cascade_delete_entity_removes_relations() {
+    let (conn, _tmp) = test_db();
+
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+    let c = ctxovrflw::db::graph::upsert_entity(&conn, "C", "test", None).unwrap();
+
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 1.0, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &b.id, &c.id, "uses", 1.0, None, None).unwrap();
+    assert_eq!(ctxovrflw::db::graph::count_relations(&conn).unwrap(), 2);
+
+    // Delete B — should cascade both relations
+    ctxovrflw::db::graph::delete_entity(&conn, &b.id).unwrap();
+    assert_eq!(ctxovrflw::db::graph::count_relations(&conn).unwrap(), 0);
+    assert_eq!(ctxovrflw::db::graph::count_entities(&conn).unwrap(), 2);
+}
+
+#[test]
+fn test_traverse_basic() {
+    let (conn, _tmp) = test_db();
+
+    // A -> B -> C
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+    let c = ctxovrflw::db::graph::upsert_entity(&conn, "C", "test", None).unwrap();
+
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 1.0, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &b.id, &c.id, "uses", 1.0, None, None).unwrap();
+
+    // Traverse from A, depth 2
+    let nodes = ctxovrflw::db::graph::traverse(&conn, &a.id, 2, None, 0.0).unwrap();
+    assert_eq!(nodes.len(), 3, "Should reach A, B, C");
+    assert_eq!(nodes[0].depth, 0);
+    assert_eq!(nodes[0].entity.name, "A");
+}
+
+#[test]
+fn test_traverse_depth_limit() {
+    let (conn, _tmp) = test_db();
+
+    // A -> B -> C -> D
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+    let c = ctxovrflw::db::graph::upsert_entity(&conn, "C", "test", None).unwrap();
+    let d = ctxovrflw::db::graph::upsert_entity(&conn, "D", "test", None).unwrap();
+
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 1.0, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &b.id, &c.id, "uses", 1.0, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &c.id, &d.id, "uses", 1.0, None, None).unwrap();
+
+    // Depth 1 — should only reach A and B
+    let nodes = ctxovrflw::db::graph::traverse(&conn, &a.id, 1, None, 0.0).unwrap();
+    assert_eq!(nodes.len(), 2);
+}
+
+#[test]
+fn test_traverse_confidence_filter() {
+    let (conn, _tmp) = test_db();
+
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+    let c = ctxovrflw::db::graph::upsert_entity(&conn, "C", "test", None).unwrap();
+
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 0.9, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &c.id, "uses", 0.3, None, None).unwrap();
+
+    // min_confidence 0.5 — should skip C
+    let nodes = ctxovrflw::db::graph::traverse(&conn, &a.id, 2, None, 0.5).unwrap();
+    assert_eq!(nodes.len(), 2); // A + B only
+}
+
+#[test]
+fn test_traverse_relation_type_filter() {
+    let (conn, _tmp) = test_db();
+
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+    let c = ctxovrflw::db::graph::upsert_entity(&conn, "C", "test", None).unwrap();
+
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "depends_on", 1.0, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &c.id, "owns", 1.0, None, None).unwrap();
+
+    // Only follow depends_on
+    let nodes = ctxovrflw::db::graph::traverse(&conn, &a.id, 2, Some("depends_on"), 0.0).unwrap();
+    assert_eq!(nodes.len(), 2); // A + B only
+}
+
+#[test]
+fn test_traverse_cycle() {
+    let (conn, _tmp) = test_db();
+
+    // A -> B -> A (cycle)
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+
+    ctxovrflw::db::graph::upsert_relation(&conn, &a.id, &b.id, "uses", 1.0, None, None).unwrap();
+    ctxovrflw::db::graph::upsert_relation(&conn, &b.id, &a.id, "uses", 1.0, None, None).unwrap();
+
+    // Should not infinite loop
+    let nodes = ctxovrflw::db::graph::traverse(&conn, &a.id, 5, None, 0.0).unwrap();
+    assert_eq!(nodes.len(), 2, "Cycle should not cause duplicates");
+}
+
+#[test]
+fn test_traverse_disconnected() {
+    let (conn, _tmp) = test_db();
+
+    let a = ctxovrflw::db::graph::upsert_entity(&conn, "A", "test", None).unwrap();
+    let _b = ctxovrflw::db::graph::upsert_entity(&conn, "B", "test", None).unwrap();
+
+    // No relations — only start node
+    let nodes = ctxovrflw::db::graph::traverse(&conn, &a.id, 2, None, 0.0).unwrap();
+    assert_eq!(nodes.len(), 1);
+}
+
+// ============================================================
+// Webhook Tests
+// ============================================================
+
+#[test]
+fn test_create_webhook() {
+    let (conn, _tmp) = test_db();
+
+    let hook = ctxovrflw::db::webhooks::create(
+        &conn,
+        "https://example.com/hook",
+        &["memory.created".to_string(), "memory.deleted".to_string()],
+        Some("my-secret"),
+    ).unwrap();
+
+    assert!(!hook.id.is_empty());
+    assert_eq!(hook.url, "https://example.com/hook");
+    assert_eq!(hook.events.len(), 2);
+    assert!(hook.enabled);
+    assert_eq!(hook.secret, Some("my-secret".to_string()));
+}
+
+#[test]
+fn test_webhook_validation() {
+    let (conn, _tmp) = test_db();
+
+    // Empty URL
+    assert!(ctxovrflw::db::webhooks::create(&conn, "", &["memory.created".to_string()], None).is_err());
+
+    // Non-HTTP URL
+    assert!(ctxovrflw::db::webhooks::create(&conn, "ftp://example.com", &["memory.created".to_string()], None).is_err());
+
+    // Invalid event
+    assert!(ctxovrflw::db::webhooks::create(&conn, "https://example.com", &["invalid.event".to_string()], None).is_err());
+}
+
+#[test]
+fn test_list_webhooks() {
+    let (conn, _tmp) = test_db();
+
+    ctxovrflw::db::webhooks::create(&conn, "https://a.com/hook", &["memory.created".to_string()], None).unwrap();
+    ctxovrflw::db::webhooks::create(&conn, "https://b.com/hook", &["entity.created".to_string()], None).unwrap();
+
+    let hooks = ctxovrflw::db::webhooks::list(&conn).unwrap();
+    assert_eq!(hooks.len(), 2);
+}
+
+#[test]
+fn test_delete_webhook() {
+    let (conn, _tmp) = test_db();
+
+    let hook = ctxovrflw::db::webhooks::create(&conn, "https://a.com", &["memory.created".to_string()], None).unwrap();
+    assert!(ctxovrflw::db::webhooks::delete(&conn, &hook.id).unwrap());
+    assert!(!ctxovrflw::db::webhooks::delete(&conn, &hook.id).unwrap());
+    assert!(ctxovrflw::db::webhooks::list(&conn).unwrap().is_empty());
+}
+
+#[test]
+fn test_webhook_enable_disable() {
+    let (conn, _tmp) = test_db();
+
+    let hook = ctxovrflw::db::webhooks::create(&conn, "https://a.com", &["memory.created".to_string()], None).unwrap();
+    assert!(hook.enabled);
+
+    ctxovrflw::db::webhooks::update_enabled(&conn, &hook.id, false).unwrap();
+    let updated = ctxovrflw::db::webhooks::get(&conn, &hook.id).unwrap().unwrap();
+    assert!(!updated.enabled);
+
+    ctxovrflw::db::webhooks::update_enabled(&conn, &hook.id, true).unwrap();
+    let updated = ctxovrflw::db::webhooks::get(&conn, &hook.id).unwrap().unwrap();
+    assert!(updated.enabled);
+}
+
+#[test]
+fn test_get_webhooks_for_event() {
+    let (conn, _tmp) = test_db();
+
+    ctxovrflw::db::webhooks::create(&conn, "https://a.com", &["memory.created".to_string(), "memory.deleted".to_string()], None).unwrap();
+    ctxovrflw::db::webhooks::create(&conn, "https://b.com", &["entity.created".to_string()], None).unwrap();
+    let disabled = ctxovrflw::db::webhooks::create(&conn, "https://c.com", &["memory.created".to_string()], None).unwrap();
+    ctxovrflw::db::webhooks::update_enabled(&conn, &disabled.id, false).unwrap();
+
+    let memory_hooks = ctxovrflw::db::webhooks::get_for_event(&conn, "memory.created").unwrap();
+    assert_eq!(memory_hooks.len(), 1, "Disabled hook should be excluded");
+    assert_eq!(memory_hooks[0].url, "https://a.com");
+
+    let entity_hooks = ctxovrflw::db::webhooks::get_for_event(&conn, "entity.created").unwrap();
+    assert_eq!(entity_hooks.len(), 1);
+
+    let none_hooks = ctxovrflw::db::webhooks::get_for_event(&conn, "relation.created").unwrap();
+    assert!(none_hooks.is_empty());
+}
+
+// ============================================================
+// Tier Gate Tests
+// ============================================================
+
+#[test]
+fn test_knowledge_graph_tier_gate() {
+    use ctxovrflw::config::Tier;
+
+    assert!(!Tier::Free.knowledge_graph_enabled());
+    assert!(!Tier::Standard.knowledge_graph_enabled());
+    assert!(Tier::Pro.knowledge_graph_enabled());
+}
+
+#[test]
+fn test_consolidation_tier_gate() {
+    use ctxovrflw::config::Tier;
+
+    assert!(!Tier::Free.consolidation_enabled());
+    assert!(!Tier::Standard.consolidation_enabled());
+    assert!(Tier::Pro.consolidation_enabled());
 }

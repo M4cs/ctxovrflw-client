@@ -82,7 +82,7 @@ pub enum Command {
     /// Rebuild embeddings for all memories (fixes missing semantic search results)
     Reindex,
 
-    /// Sync memories to cloud (Pro tier)
+    /// Sync memories to cloud
     Sync,
 
     /// Show cloud account status, tier, usage

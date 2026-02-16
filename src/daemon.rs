@@ -187,7 +187,6 @@ ExecStart={binary} start --foreground
 Restart=on-failure
 RestartSec=5
 Environment=RUST_LOG=ctxovrflw=info
-Environment=ORT_DYLIB_PATH=%h/onnxruntime-linux-x64-1.23.0/lib/libonnxruntime.so
 
 [Install]
 WantedBy=default.target

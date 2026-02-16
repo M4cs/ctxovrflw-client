@@ -8,7 +8,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
     let mut tools = vec![
         json!({
             "name": "remember",
-            "description": "Store important context to shared memory. This memory persists across sessions and is accessible by ALL connected AI tools (Cursor, Claude Code, Cline, etc.).\n\nUSE THIS WHEN:\n- The user shares a preference (\"I prefer tabs\", \"I use Fly.io\")\n- A decision is made (\"We're using Rust for the backend\")\n- Important project context comes up (\"The API is at api.example.com\")\n- The user explicitly asks you to remember something\n\nBEST PRACTICES:\n- Store atomic facts, not paragraphs\n- Use tags for organization\n- Set subject to identify WHO or WHAT this memory is about\n- Choose the right type: preference for likes/config, semantic for facts, episodic for events, procedural for how-to steps",
+            "description": "Store important context to shared memory. **Call this proactively** — don't wait for the user to say 'remember this'. Whenever you learn something worth knowing in a future session, store it immediately and silently.\n\nThis memory persists across sessions and is accessible by ALL connected AI tools (Cursor, Claude Code, Cline, etc.).\n\nUSE THIS WHEN:\n- The user shares a preference (\"I prefer tabs\", \"I use Fly.io\")\n- A decision is made (\"We're using Rust for the backend\")\n- Important project context comes up (\"The API is at api.example.com\")\n- The user explicitly asks you to remember something\n- You learn ANYTHING worth knowing in a future session — just store it silently\n\nBEST PRACTICES:\n- Store atomic facts, not paragraphs\n- Use tags for organization\n- Set subject to identify WHO or WHAT this memory is about\n- Choose the right type: preference for likes/config, semantic for facts, episodic for events, procedural for how-to steps\n- Don't announce that you're remembering — just do it",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -45,7 +45,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
         }),
         json!({
             "name": "recall",
-            "description": "Search shared memory for relevant context using semantic similarity. Results come from ALL connected AI tools — something stored by Cursor can be recalled by Claude Code.\n\nUSE THIS WHEN:\n- Before answering questions about the user's preferences, setup, or past decisions\n- The user asks \"do you remember...\" or \"what did I say about...\"\n- You need project context that might have been discussed in another tool\n- Starting a new session and need to catch up on context\n\nTIPS:\n- Use natural language queries (\"coding preferences\" not just \"tabs\")\n- Semantic search finds conceptually related memories, not just keyword matches\n- Use subject filter to scope results (\"everything about project X\")\n- Use max_tokens to control context window usage",
+            "description": "Search shared memory for relevant context. **Call this at the start of every conversation** and whenever past context would help. Don't wait for the user to ask 'do you remember' — check proactively.\n\nResults come from ALL connected AI tools — something stored by Cursor can be recalled by Claude Code.\n\nUSE THIS WHEN:\n- **At the START of every session** — recall context about the current project/topic\n- Before answering questions about the user's preferences, setup, or past decisions\n- The user asks \"do you remember...\" or \"what did I say about...\"\n- You need project context that might have been discussed in another tool\n- Before suggesting an approach — check if there's a stated preference\n\nTIPS:\n- Use natural language queries (\"coding preferences\" not just \"tabs\")\n- Semantic search finds conceptually related memories, not just keyword matches\n- Use subject filter to scope results (\"everything about project X\")\n- Use max_tokens to control context window usage",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -138,6 +138,245 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
         }),
     ];
 
+    // ── Knowledge Graph tools (Pro tier) ──
+    if matches!(cfg.tier, Tier::Pro) {
+        tools.push(json!({
+            "name": "add_entity",
+            "description": "Add an entity to the knowledge graph. Entities represent people, projects, services, concepts, etc. If an entity with the same name+type already exists, its metadata is updated.\n\n**Call this proactively** when you encounter named things worth tracking: people, repos, services, APIs, tools, companies, concepts.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Entity name (e.g., 'auth-service', 'Max', 'PostgreSQL', 'ctxovrflw')"
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "Entity type (e.g., 'person', 'service', 'database', 'project', 'tool', 'concept', 'file', 'api')",
+                        "default": "generic"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Optional structured metadata about the entity"
+                    }
+                },
+                "required": ["name", "type"]
+            }
+        }));
+
+        tools.push(json!({
+            "name": "add_relation",
+            "description": "Add a relationship between two entities in the knowledge graph. If the relation already exists, updates confidence.\n\n**Call this when you learn how things connect:** service A depends on B, person X owns project Y, tool Z reads from API W.\n\nEntities are resolved by name+type. If they don't exist yet, create them first with add_entity.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source": {
+                        "type": "string",
+                        "description": "Source entity name"
+                    },
+                    "source_type": {
+                        "type": "string",
+                        "description": "Source entity type",
+                        "default": "generic"
+                    },
+                    "target": {
+                        "type": "string",
+                        "description": "Target entity name"
+                    },
+                    "target_type": {
+                        "type": "string",
+                        "description": "Target entity type",
+                        "default": "generic"
+                    },
+                    "relation": {
+                        "type": "string",
+                        "description": "Relationship type (e.g., 'depends_on', 'owns', 'uses', 'created_by', 'part_of', 'connects_to', 'deployed_on', 'tested_by')"
+                    },
+                    "confidence": {
+                        "type": "number",
+                        "description": "Confidence 0.0-1.0 (default 1.0). Use lower values for inferred relationships.",
+                        "default": 1.0
+                    }
+                },
+                "required": ["source", "source_type", "target", "target_type", "relation"]
+            }
+        }));
+
+        tools.push(json!({
+            "name": "get_relations",
+            "description": "Query relationships for an entity. Returns all connections (incoming and outgoing).\n\nUse this to understand how things connect: 'what does auth-service depend on?', 'who owns this project?', 'what uses PostgreSQL?'\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "entity": {
+                        "type": "string",
+                        "description": "Entity name to query"
+                    },
+                    "entity_type": {
+                        "type": "string",
+                        "description": "Entity type (helps disambiguate)"
+                    },
+                    "relation_type": {
+                        "type": "string",
+                        "description": "Filter to specific relation type (e.g., 'depends_on')"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["outgoing", "incoming", "both"],
+                        "description": "Direction filter. 'outgoing' = relations FROM this entity, 'incoming' = TO this entity",
+                        "default": "both"
+                    }
+                },
+                "required": ["entity"]
+            }
+        }));
+
+        tools.push(json!({
+            "name": "traverse",
+            "description": "Traverse the knowledge graph from an entity up to N hops. Returns all reachable entities with the path taken.\n\nUse for impact analysis: 'what would break if I change this DB schema?' or discovery: 'show me everything connected to this project within 2 hops'.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "entity": {
+                        "type": "string",
+                        "description": "Starting entity name"
+                    },
+                    "entity_type": {
+                        "type": "string",
+                        "description": "Starting entity type (helps disambiguate)"
+                    },
+                    "max_depth": {
+                        "type": "integer",
+                        "description": "Max hops to traverse (1-5, default 2)",
+                        "default": 2
+                    },
+                    "relation_type": {
+                        "type": "string",
+                        "description": "Only follow edges of this type"
+                    },
+                    "min_confidence": {
+                        "type": "number",
+                        "description": "Minimum confidence threshold (0.0-1.0, default 0.0)",
+                        "default": 0.0
+                    }
+                },
+                "required": ["entity"]
+            }
+        }));
+
+        tools.push(json!({
+            "name": "list_entities",
+            "description": "List all entities in the knowledge graph, optionally filtered by type.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "description": "Filter by entity type"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search entities by name (substring match)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results (default 50)",
+                        "default": 50
+                    }
+                }
+            }
+        }));
+
+        tools.push(json!({
+            "name": "delete_entity",
+            "description": "Delete an entity and all its relations from the knowledge graph.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "entity": {
+                        "type": "string",
+                        "description": "Entity name"
+                    },
+                    "entity_type": {
+                        "type": "string",
+                        "description": "Entity type (required to disambiguate)"
+                    }
+                },
+                "required": ["entity", "entity_type"]
+            }
+        }));
+
+        tools.push(json!({
+            "name": "delete_relation",
+            "description": "Delete a specific relation by ID.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Relation ID to delete"
+                    }
+                },
+                "required": ["id"]
+            }
+        }));
+    }
+
+    // ── Webhook tools (all tiers) ──
+    tools.push(json!({
+        "name": "manage_webhooks",
+        "description": "Manage webhook subscriptions for memory and graph events. Webhooks fire HTTP POST to your URL when events occur.\n\nActions: 'list', 'create', 'delete', 'enable', 'disable'.\n\nValid events: memory.created, memory.updated, memory.deleted, entity.created, entity.updated, entity.deleted, relation.created, relation.updated, relation.deleted",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "create", "delete", "enable", "disable"],
+                    "description": "Webhook action"
+                },
+                "url": {
+                    "type": "string",
+                    "description": "Webhook URL (for 'create')"
+                },
+                "events": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Event types to subscribe to (for 'create')"
+                },
+                "secret": {
+                    "type": "string",
+                    "description": "HMAC secret for signing payloads (for 'create')"
+                },
+                "id": {
+                    "type": "string",
+                    "description": "Webhook ID (for 'delete', 'enable', 'disable')"
+                }
+            },
+            "required": ["action"]
+        }
+    }));
+
+    // ── Consolidation tool (Pro tier) ──
+    if matches!(cfg.tier, Tier::Pro) {
+        tools.push(json!({
+            "name": "consolidate",
+            "description": "Get related/duplicate memories for a subject or topic, so you can review and merge them. Returns candidate groups.\n\nWorkflow: call consolidate → review candidates → use update_memory to merge/deduplicate → use forget to remove redundant ones.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "subject": {
+                        "type": "string",
+                        "description": "Subject entity to consolidate memories for"
+                    },
+                    "topic": {
+                        "type": "string",
+                        "description": "Topic to find related memories (uses semantic search)"
+                    }
+                }
+            }
+        }));
+    }
+
     // Context synthesis only for Pro+
     // Subjects tool — available to all tiers
     tools.push(json!({
@@ -225,6 +464,15 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
         "status" => handle_status(cfg).await,
         "subjects" => handle_subjects().await,
         "context" => handle_context(cfg, arguments).await,
+        "add_entity" => handle_add_entity(arguments).await,
+        "add_relation" => handle_add_relation(arguments).await,
+        "get_relations" => handle_get_relations(arguments).await,
+        "traverse" => handle_traverse(arguments).await,
+        "list_entities" => handle_list_entities(arguments).await,
+        "delete_entity" => handle_delete_entity(arguments).await,
+        "delete_relation" => handle_delete_relation(arguments).await,
+        "manage_webhooks" => handle_manage_webhooks(arguments).await,
+        "consolidate" => handle_consolidate(cfg, arguments).await,
         _ => Ok(json!({
             "content": [{ "type": "text", "text": format!("Unknown tool: {tool_name}") }],
             "isError": true
@@ -232,19 +480,66 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
     }
 }
 
+/// Maximum memory content size (100 KB).
+const MAX_CONTENT_SIZE: usize = 100 * 1024;
+const MAX_TAG_LENGTH: usize = 200;
+const MAX_TAGS: usize = 50;
+const MAX_SUBJECT_LENGTH: usize = 500;
+
+/// Deduplicate and validate tags.
+fn validate_tags(tags: &[String]) -> std::result::Result<Vec<String>, String> {
+    if tags.len() > MAX_TAGS {
+        return Err(format!("Too many tags ({}). Maximum is {}.", tags.len(), MAX_TAGS));
+    }
+    for tag in tags {
+        if tag.len() > MAX_TAG_LENGTH {
+            return Err(format!("Tag too long ({} chars). Maximum is {} chars.", tag.len(), MAX_TAG_LENGTH));
+        }
+    }
+    let mut deduped: Vec<String> = tags.to_vec();
+    deduped.sort();
+    deduped.dedup();
+    Ok(deduped)
+}
+
+fn validate_subject(subject: Option<&str>) -> std::result::Result<(), String> {
+    if let Some(s) = subject {
+        if s.len() > MAX_SUBJECT_LENGTH {
+            return Err(format!("Subject too long ({} chars). Maximum is {} chars.", s.len(), MAX_SUBJECT_LENGTH));
+        }
+    }
+    Ok(())
+}
+
 async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
     let content = args["content"]
         .as_str()
         .ok_or_else(|| anyhow::anyhow!("content is required"))?;
+    if content.trim().is_empty() {
+        anyhow::bail!("content cannot be empty");
+    }
+    if content.len() > MAX_CONTENT_SIZE {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": format!("Content too large ({} bytes). Maximum is {} bytes.", content.len(), MAX_CONTENT_SIZE) }],
+            "isError": true
+        }));
+    }
     let memory_type = args["type"]
         .as_str()
         .unwrap_or("semantic")
         .parse()
         .unwrap_or_default();
-    let tags: Vec<String> = args["tags"]
+    let raw_tags: Vec<String> = args["tags"]
         .as_array()
         .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
         .unwrap_or_default();
+    let tags = match validate_tags(&raw_tags) {
+        Ok(t) => t,
+        Err(e) => return Ok(json!({
+            "content": [{ "type": "text", "text": e }],
+            "isError": true
+        })),
+    };
 
     let conn = db::open()?;
 
@@ -273,6 +568,12 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
     };
 
     let subject = args["subject"].as_str();
+    if let Err(e) = validate_subject(subject) {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": e }],
+            "isError": true
+        }));
+    }
 
     let expires_at = match resolve_expiry(args) {
         Ok(e) => e,
@@ -301,6 +602,8 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
             let _ = crate::sync::push_one(&cfg2, &id).await;
         });
     }
+
+    crate::webhooks::fire("memory.created", json!({ "memory": memory }));
 
     let expiry_note = match &memory.expires_at {
         Some(e) => format!(" (expires: {e})"),
@@ -457,6 +760,7 @@ async fn handle_forget(_cfg: &Config, args: &Value) -> Result<Value> {
 
     let deleted = db::memories::delete(&conn, id)?;
     let msg = if deleted {
+        crate::webhooks::fire("memory.deleted", json!({ "memory_id": id }));
         format!("Deleted memory {id}.")
     } else {
         format!("Memory {id} not found.")
@@ -484,9 +788,25 @@ async fn handle_update_memory(cfg: &Config, args: &Value) -> Result<Value> {
     }
 
     let content = args["content"].as_str();
-    let tags: Option<Vec<String>> = args["tags"]
-        .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect());
+    let tags: Option<Vec<String>> = match args["tags"].as_array() {
+        Some(a) => {
+            let raw: Vec<String> = a.iter().filter_map(|v| v.as_str().map(String::from)).collect();
+            match validate_tags(&raw) {
+                Ok(t) => Some(t),
+                Err(e) => return Ok(json!({
+                    "content": [{ "type": "text", "text": e }],
+                    "isError": true
+                })),
+            }
+        }
+        None => None,
+    };
+    if let Err(e) = validate_subject(args["subject"].as_str()) {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": e }],
+            "isError": true
+        }));
+    }
     let subject = if args.get("subject").is_some() {
         Some(args["subject"].as_str()) // Some(None) = clear, Some(Some(x)) = set
     } else {
@@ -544,6 +864,8 @@ async fn handle_update_memory(cfg: &Config, args: &Value) -> Result<Value> {
                     let _ = crate::sync::push_one(&cfg2, &mid).await;
                 });
             }
+
+            crate::webhooks::fire("memory.updated", json!({ "memory": mem }));
 
             let mut changes = Vec::new();
             if content.is_some() { changes.push("content"); }
@@ -747,5 +1069,426 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
 
     Ok(json!({
         "content": [{ "type": "text", "text": briefing }]
+    }))
+}
+
+// ── Knowledge Graph handlers ────────────────────────────────
+
+async fn handle_add_entity(args: &Value) -> Result<Value> {
+    let name = args["name"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("name is required"))?;
+    let entity_type = args["type"]
+        .as_str()
+        .unwrap_or("generic");
+    let metadata = args.get("metadata").filter(|v| !v.is_null());
+
+    let conn = db::open()?;
+    let entity = db::graph::upsert_entity(&conn, name, entity_type, metadata)?;
+
+    crate::webhooks::fire("entity.created", json!({
+        "entity": entity,
+    }));
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": format!("Entity created: {} ({}) [id: {}]", entity.name, entity.entity_type, entity.id)
+        }]
+    }))
+}
+
+async fn handle_add_relation(args: &Value) -> Result<Value> {
+    let source_name = args["source"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("source is required"))?;
+    let source_type = args["source_type"].as_str().unwrap_or("generic");
+    let target_name = args["target"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("target is required"))?;
+    let target_type = args["target_type"].as_str().unwrap_or("generic");
+    let relation_type = args["relation"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("relation is required"))?;
+    let confidence = args["confidence"].as_f64().unwrap_or(1.0);
+
+    let conn = db::open()?;
+
+    // Auto-create entities if they don't exist
+    let source = db::graph::upsert_entity(&conn, source_name, source_type, None)?;
+    let target = db::graph::upsert_entity(&conn, target_name, target_type, None)?;
+
+    let relation = db::graph::upsert_relation(
+        &conn,
+        &source.id,
+        &target.id,
+        relation_type,
+        confidence,
+        None,
+        None,
+    )?;
+
+    crate::webhooks::fire("relation.created", json!({
+        "relation": relation,
+        "source": source,
+        "target": target,
+    }));
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": format!(
+                "Relation: {} ({}) —[{}]→ {} ({}) [confidence: {:.1}, id: {}]",
+                source.name, source.entity_type,
+                relation.relation_type,
+                target.name, target.entity_type,
+                relation.confidence, relation.id
+            )
+        }]
+    }))
+}
+
+async fn handle_get_relations(args: &Value) -> Result<Value> {
+    let entity_name = args["entity"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("entity is required"))?;
+    let entity_type = args["entity_type"].as_str();
+    let relation_type = args["relation_type"].as_str();
+    let direction = args["direction"].as_str();
+
+    let conn = db::open()?;
+
+    // Find entity by name
+    let entities = db::graph::find_entity(&conn, entity_name, entity_type)?;
+    if entities.is_empty() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": format!("Entity '{}' not found.", entity_name) }]
+        }));
+    }
+
+    let entity = &entities[0];
+    let dir = match direction {
+        Some("outgoing") => Some("outgoing"),
+        Some("incoming") => Some("incoming"),
+        _ => None,
+    };
+    let relations = db::graph::get_relations(&conn, &entity.id, relation_type, dir)?;
+
+    if relations.is_empty() {
+        return Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": format!("No relations found for '{}' ({}).", entity.name, entity.entity_type)
+            }]
+        }));
+    }
+
+    let mut text = format!("Relations for '{}' ({}):\n\n", entity.name, entity.entity_type);
+    for (rel, source, target) in &relations {
+        text.push_str(&format!(
+            "- {} ({}) —[{}]→ {} ({})  [confidence: {:.1}, id: {}]\n",
+            source.name, source.entity_type,
+            rel.relation_type,
+            target.name, target.entity_type,
+            rel.confidence, rel.id
+        ));
+    }
+
+    Ok(json!({
+        "content": [{ "type": "text", "text": text }]
+    }))
+}
+
+async fn handle_traverse(args: &Value) -> Result<Value> {
+    let entity_name = args["entity"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("entity is required"))?;
+    let entity_type = args["entity_type"].as_str();
+    let max_depth = args["max_depth"].as_u64().unwrap_or(2) as usize;
+    let relation_type = args["relation_type"].as_str();
+    let min_confidence = args["min_confidence"].as_f64().unwrap_or(0.0);
+
+    let conn = db::open()?;
+
+    let entities = db::graph::find_entity(&conn, entity_name, entity_type)?;
+    if entities.is_empty() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": format!("Entity '{}' not found.", entity_name) }]
+        }));
+    }
+
+    let entity = &entities[0];
+    let nodes = db::graph::traverse(&conn, &entity.id, max_depth, relation_type, min_confidence)?;
+
+    if nodes.len() <= 1 {
+        return Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": format!("No connections found from '{}' within {} hops.", entity.name, max_depth)
+            }]
+        }));
+    }
+
+    let mut text = format!(
+        "Graph traversal from '{}' ({}) — {} nodes reached, max {} hops:\n\n",
+        entity.name, entity.entity_type, nodes.len(), max_depth
+    );
+
+    for node in &nodes {
+        let indent = "  ".repeat(node.depth);
+        let path_str = if node.path.is_empty() {
+            "(start)".to_string()
+        } else {
+            node.path
+                .iter()
+                .map(|e| format!("—[{}]→", e.relation_type))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        text.push_str(&format!(
+            "{}{} ({}) — depth {} {}\n",
+            indent, node.entity.name, node.entity.entity_type, node.depth, path_str
+        ));
+    }
+
+    Ok(json!({
+        "content": [{ "type": "text", "text": text }]
+    }))
+}
+
+async fn handle_list_entities(args: &Value) -> Result<Value> {
+    let entity_type = args["type"].as_str();
+    let query = args["query"].as_str();
+    let limit = args["limit"].as_u64().unwrap_or(50) as usize;
+
+    let conn = db::open()?;
+
+    let entities = if let Some(q) = query {
+        db::graph::search_entities(&conn, q, entity_type, limit)?
+    } else {
+        db::graph::list_entities(&conn, entity_type, limit, 0)?
+    };
+
+    if entities.is_empty() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": "No entities found." }]
+        }));
+    }
+
+    let entity_count = db::graph::count_entities(&conn)?;
+    let relation_count = db::graph::count_relations(&conn)?;
+
+    let mut text = format!("Knowledge graph: {} entities, {} relations\n\n", entity_count, relation_count);
+    for e in &entities {
+        text.push_str(&format!("- {} ({}) [id: {}]\n", e.name, e.entity_type, e.id));
+    }
+
+    Ok(json!({
+        "content": [{ "type": "text", "text": text }]
+    }))
+}
+
+async fn handle_delete_entity(args: &Value) -> Result<Value> {
+    let entity_name = args["entity"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("entity is required"))?;
+    let entity_type = args["entity_type"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("entity_type is required"))?;
+
+    let conn = db::open()?;
+
+    let entities = db::graph::find_entity(&conn, entity_name, Some(entity_type))?;
+    if entities.is_empty() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": format!("Entity '{}' ({}) not found.", entity_name, entity_type) }],
+            "isError": true
+        }));
+    }
+
+    let entity = &entities[0];
+    db::graph::delete_entity(&conn, &entity.id)?;
+
+    crate::webhooks::fire("entity.deleted", json!({
+        "entity_id": entity.id,
+        "name": entity.name,
+        "type": entity.entity_type,
+    }));
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": format!("Deleted entity '{}' ({}) and all its relations.", entity.name, entity.entity_type)
+        }]
+    }))
+}
+
+async fn handle_delete_relation(args: &Value) -> Result<Value> {
+    let id = args["id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("id is required"))?;
+
+    let conn = db::open()?;
+    let deleted = db::graph::delete_relation(&conn, id)?;
+
+    if deleted {
+        crate::webhooks::fire("relation.deleted", json!({ "relation_id": id }));
+        Ok(json!({
+            "content": [{ "type": "text", "text": format!("Deleted relation {id}.") }]
+        }))
+    } else {
+        Ok(json!({
+            "content": [{ "type": "text", "text": format!("Relation {id} not found.") }],
+            "isError": true
+        }))
+    }
+}
+
+// ── Webhook handler ─────────────────────────────────────────
+
+async fn handle_manage_webhooks(args: &Value) -> Result<Value> {
+    let action = args["action"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("action is required"))?;
+
+    let conn = db::open()?;
+
+    match action {
+        "list" => {
+            let hooks = db::webhooks::list(&conn)?;
+            if hooks.is_empty() {
+                return Ok(json!({
+                    "content": [{ "type": "text", "text": "No webhooks configured." }]
+                }));
+            }
+            let mut text = String::from("Webhooks:\n\n");
+            for h in &hooks {
+                text.push_str(&format!(
+                    "- [{}] {} → {} (events: {}) {}\n",
+                    h.id, if h.enabled { "✓" } else { "✗" },
+                    h.url,
+                    h.events.join(", "),
+                    if h.secret.is_some() { "[signed]" } else { "" }
+                ));
+            }
+            Ok(json!({
+                "content": [{ "type": "text", "text": text }]
+            }))
+        }
+        "create" => {
+            let url = args["url"]
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("url is required for create"))?;
+            let events: Vec<String> = args["events"]
+                .as_array()
+                .ok_or_else(|| anyhow::anyhow!("events array is required for create"))?
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            let secret = args["secret"].as_str();
+
+            let hook = db::webhooks::create(&conn, url, &events, secret)?;
+            Ok(json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("Webhook created: {} → {} (events: {}) [id: {}]",
+                        if hook.enabled { "✓" } else { "✗" },
+                        hook.url, hook.events.join(", "), hook.id)
+                }]
+            }))
+        }
+        "delete" => {
+            let id = args["id"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("id is required for delete"))?;
+            let deleted = db::webhooks::delete(&conn, id)?;
+            let msg = if deleted { format!("Deleted webhook {id}.") } else { format!("Webhook {id} not found.") };
+            Ok(json!({ "content": [{ "type": "text", "text": msg }] }))
+        }
+        "enable" => {
+            let id = args["id"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("id is required for enable"))?;
+            db::webhooks::update_enabled(&conn, id, true)?;
+            Ok(json!({ "content": [{ "type": "text", "text": format!("Webhook {id} enabled.") }] }))
+        }
+        "disable" => {
+            let id = args["id"].as_str()
+                .ok_or_else(|| anyhow::anyhow!("id is required for disable"))?;
+            db::webhooks::update_enabled(&conn, id, false)?;
+            Ok(json!({ "content": [{ "type": "text", "text": format!("Webhook {id} disabled.") }] }))
+        }
+        _ => Ok(json!({
+            "content": [{ "type": "text", "text": format!("Unknown webhook action: {action}") }],
+            "isError": true
+        })),
+    }
+}
+
+// ── Consolidation handler ───────────────────────────────────
+
+async fn handle_consolidate(cfg: &Config, args: &Value) -> Result<Value> {
+    if !cfg.tier.consolidation_enabled() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": "Consolidation requires Pro tier. Upgrade at https://ctxovrflw.dev/pricing" }],
+            "isError": true
+        }));
+    }
+
+    let subject = args["subject"].as_str();
+    let topic = args["topic"].as_str();
+
+    if subject.is_none() && topic.is_none() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": "Provide 'subject' or 'topic' to find candidates for consolidation." }],
+            "isError": true
+        }));
+    }
+
+    let conn = db::open()?;
+    let mut candidates: Vec<db::memories::Memory> = Vec::new();
+
+    // Get by subject
+    if let Some(subj) = subject {
+        candidates.extend(db::search::by_subject(&conn, subj, 50)?);
+    }
+
+    // Get by topic (semantic search)
+    if let Some(q) = topic {
+        if let Ok(mut embedder) = crate::embed::Embedder::new() {
+            if let Ok(embedding) = embedder.embed(q) {
+                let sem = db::search::semantic_search(&conn, &embedding, 30).unwrap_or_default();
+                for (mem, _score) in sem {
+                    if !candidates.iter().any(|m| m.id == mem.id) {
+                        candidates.push(mem);
+                    }
+                }
+            }
+        }
+    }
+
+    if candidates.is_empty() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": "No memories found for consolidation." }]
+        }));
+    }
+
+    // Group by approximate similarity (same subject, overlapping tags)
+    let mut text = format!("Found {} candidate memories for consolidation:\n\n", candidates.len());
+    for mem in &candidates {
+        let tags_str = if mem.tags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", mem.tags.join(", "))
+        };
+        text.push_str(&format!(
+            "- [{}] ({}) {}{}{}\n",
+            mem.id, mem.memory_type, mem.content,
+            mem.subject.as_deref().map(|s| format!(" {{subject: {s}}}")).unwrap_or_default(),
+            tags_str,
+        ));
+    }
+    text.push_str("\nReview these memories. Use update_memory to merge content and forget to remove duplicates.");
+
+    Ok(json!({
+        "content": [{ "type": "text", "text": text }]
     }))
 }

@@ -1,5 +1,7 @@
+pub mod graph;
 pub mod memories;
 pub mod search;
+pub mod webhooks;
 
 use anyhow::Result;
 use rusqlite::Connection;
@@ -29,6 +31,8 @@ pub fn open() -> Result<Connection> {
     )?;
 
     migrate(&conn)?;
+    graph::migrate(&conn)?;
+    webhooks::migrate(&conn)?;
     Ok(conn)
 }
 

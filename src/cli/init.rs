@@ -15,6 +15,8 @@ struct AgentDef {
     config_paths: &'static [ConfigLocation],
     /// Uses CLI command for install instead of JSON config
     cli_install: Option<&'static str>,
+    /// Global rules file path (relative to home dir)
+    global_rules_path: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +41,7 @@ const AGENTS: &[AgentDef] = &[
         detect: DetectMethod::Binary("claude"),
         config_paths: &[],
         cli_install: Some("claude mcp add --transport sse --scope user ctxovrflw http://127.0.0.1:{port}/mcp/sse"),
+        global_rules_path: Some(".claude/CLAUDE.md"),
     },
     AgentDef {
         name: "Claude Desktop",
@@ -49,12 +52,14 @@ const AGENTS: &[AgentDef] = &[
             ConfigLocation::AppData("Claude/claude_desktop_config.json"),
         ],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Cursor",
         detect: DetectMethod::Dir(".cursor"),
         config_paths: &[ConfigLocation::Home(".cursor/mcp.json")],
         cli_install: None,
+        global_rules_path: Some(".cursorrules"),
     },
     AgentDef {
         name: "Cline",
@@ -64,6 +69,7 @@ const AGENTS: &[AgentDef] = &[
             ConfigLocation::Config("Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json"),
         ],
         cli_install: None,
+        global_rules_path: Some(".cline/.clinerules"),
     },
     AgentDef {
         name: "Roo Code",
@@ -73,66 +79,77 @@ const AGENTS: &[AgentDef] = &[
             ConfigLocation::Home(".roo-code/mcp.json"),
         ],
         cli_install: None,
+        global_rules_path: Some(".roo-code/.roorules"),
     },
     AgentDef {
         name: "Windsurf",
         detect: DetectMethod::Dir(".windsurf"),
         config_paths: &[ConfigLocation::Home(".windsurf/mcp.json")],
         cli_install: None,
+        global_rules_path: Some(".windsurf/.windsurfrules"),
     },
     AgentDef {
         name: "Continue",
         detect: DetectMethod::ConfigDir("continue"),
         config_paths: &[ConfigLocation::Config("continue/config.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Codex CLI",
         detect: DetectMethod::Binary("codex"),
         config_paths: &[ConfigLocation::Config("codex/mcp.json")],
         cli_install: None,
+        global_rules_path: Some("codex.md"),
     },
     AgentDef {
         name: "Goose",
         detect: DetectMethod::Any(&["goose", "goosed"]),
         config_paths: &[ConfigLocation::Config("goose/config.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Gemini CLI",
         detect: DetectMethod::Binary("gemini"),
         config_paths: &[ConfigLocation::Config("gemini/settings.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Antigravity",
         detect: DetectMethod::Dir(".antigravity"),
         config_paths: &[ConfigLocation::Home(".antigravity/mcp.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Amp",
         detect: DetectMethod::Binary("amp"),
         config_paths: &[ConfigLocation::Config("amp/mcp.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Kiro",
         detect: DetectMethod::Any(&["kiro", "kiro-cli"]),
         config_paths: &[ConfigLocation::Home(".kiro/mcp.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "OpenCode",
         detect: DetectMethod::Binary("opencode"),
         config_paths: &[ConfigLocation::Config("opencode/mcp.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Trae",
         detect: DetectMethod::Dir(".trae"),
         config_paths: &[ConfigLocation::Home(".trae/mcp.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Kilo Code",
@@ -142,24 +159,28 @@ const AGENTS: &[AgentDef] = &[
             ConfigLocation::Home(".kilo/mcp.json"),
         ],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "Factory (Drip)",
         detect: DetectMethod::Binary("drip"),
         config_paths: &[ConfigLocation::Config("factory/mcp.json")],
         cli_install: None,
+        global_rules_path: None,
     },
     AgentDef {
         name: "GitHub Copilot",
         detect: DetectMethod::Binary("gh-copilot"),
         config_paths: &[],
         cli_install: None,
+        global_rules_path: Some(".github/copilot-instructions.md"),
     },
     AgentDef {
         name: "OpenClaw",
         detect: DetectMethod::Dir(".openclaw"),
         config_paths: &[],
         cli_install: None,
+        global_rules_path: Some(".openclaw/workspace/AGENTS.md"),
     },
 ];
 
@@ -321,6 +342,181 @@ fn write_mcp_config(
     Ok(())
 }
 
+// ── Agent Rules Installation ─────────────────────────────────
+
+const CTXOVRFLW_RULES_MARKER: &str = "## Memory (ctxovrflw)";
+
+fn ctxovrflw_rules_content() -> &'static str {
+    r#"
+## Memory (ctxovrflw)
+
+You have persistent, cross-agent memory via ctxovrflw. Use it automatically — don't wait to be asked.
+
+### On session start
+Call `recall` with a broad query about the current project or topic. Load context before responding.
+
+### During conversations — REMEMBER proactively when you encounter:
+- User preferences or opinions ("I prefer...", "always use...", "I don't like...")
+- Project decisions and rationale ("we're using X because Y")
+- Architecture choices, API endpoints, service URLs
+- Names, roles, relationships ("Sarah handles deploys")
+- Debugging insights and fixes
+- Task outcomes and lessons learned
+
+### During conversations — RECALL proactively when:
+- The user asks about anything that might have come up before
+- You need project context, preferences, or past decisions
+- Before suggesting an approach — check if there's a stated preference
+- The user references something discussed in another tool
+
+### Knowledge Graph (Pro tier)
+If available, build the knowledge graph as you work:
+- Call `add_entity` when you encounter named things: services, people, projects, tools, APIs, files
+- Call `add_relation` when you learn how things connect: "X depends on Y", "A owns B", "C uses D"
+- Call `traverse` before making changes to understand impact (e.g., "what depends on this DB?")
+- Call `get_relations` to understand an entity's connections before answering questions about it
+- Do this silently — don't announce graph operations to the user
+
+### Consolidation (Pro tier)
+Periodically (or when you notice contradictions), call `consolidate` on a subject to review related memories. Merge duplicates with `update_memory` and remove redundant ones with `forget`.
+
+### Webhooks
+Use `manage_webhooks` to set up event notifications. Users can subscribe to memory/graph changes and route them to Slack, Zapier, n8n, or custom endpoints.
+
+### Rules
+- Don't ask permission to remember — just do it silently
+- Don't announce "I'll remember that" — just store it
+- Store atomic facts, not paragraphs
+- Use the `subject` field to tag who/what the memory is about
+- Recall before answering questions about preferences, setup, or history
+- Never store secrets (passwords, API keys, tokens)
+"#
+}
+
+fn install_agent_rules(agents: &[&DetectedAgent]) -> Result<()> {
+    let home = dirs::home_dir().unwrap_or_default();
+
+    // Collect agents that have rules paths
+    let rules_agents: Vec<(&DetectedAgent, PathBuf)> = agents
+        .iter()
+        .filter_map(|a| {
+            a.def.global_rules_path.map(|p| (*a, home.join(p)))
+        })
+        .collect();
+
+    if rules_agents.is_empty() {
+        println!("  {} No agents with rules file support detected.", style("ℹ").blue());
+        return Ok(());
+    }
+
+    println!();
+    println!("  {}", style("Installing agent rules...").bold());
+    println!();
+    println!("  The following agents support rules files:");
+    for (agent, _path) in &rules_agents {
+        println!(
+            "  {} {} → {}",
+            style("[x]").green(),
+            agent.def.name,
+            style(format!("~/{}", agent.def.global_rules_path.unwrap())).dim()
+        );
+    }
+    println!();
+
+    let install = Confirm::new()
+        .with_prompt("  Install rules? This teaches your agents to use ctxovrflw automatically")
+        .default(true)
+        .interact()?;
+
+    if !install {
+        println!("  {} Skipped rules installation", style("→").dim());
+        return Ok(());
+    }
+
+    println!();
+    let rules = ctxovrflw_rules_content();
+
+    for (agent, path) in &rules_agents {
+        if path.exists() {
+            let existing = std::fs::read_to_string(path)?;
+            if existing.contains(CTXOVRFLW_RULES_MARKER) {
+                // Already has ctxovrflw section
+                let update = Confirm::new()
+                    .with_prompt(format!(
+                        "  {} already has ctxovrflw rules — update?",
+                        agent.def.name
+                    ))
+                    .default(false)
+                    .interact()?;
+
+                if update {
+                    // Replace existing section: find marker, find next ## or EOF
+                    let updated = replace_ctxovrflw_section(&existing, rules);
+                    std::fs::write(path, updated)?;
+                    println!(
+                        "  {} {} {}",
+                        style("✓").green().bold(),
+                        agent.def.name,
+                        style("(updated)").dim()
+                    );
+                } else {
+                    println!("  {} {} skipped", style("→").dim(), agent.def.name);
+                }
+            } else {
+                // Append to existing file
+                let mut content = existing;
+                if !content.ends_with('\n') {
+                    content.push('\n');
+                }
+                content.push_str(rules);
+                std::fs::write(path, content)?;
+                println!(
+                    "  {} {} {}",
+                    style("✓").green().bold(),
+                    agent.def.name,
+                    style("(appended)").dim()
+                );
+            }
+        } else {
+            // Create new file
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(path, rules.trim_start())?;
+            println!(
+                "  {} {} {}",
+                style("✓").green().bold(),
+                agent.def.name,
+                style("(created)").dim()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Replace the ctxovrflw section in existing content, preserving everything else.
+fn replace_ctxovrflw_section(content: &str, new_rules: &str) -> String {
+    if let Some(start) = content.find(CTXOVRFLW_RULES_MARKER) {
+        // Find the end: next top-level heading (## at start of line) or EOF
+        let after_marker = start + CTXOVRFLW_RULES_MARKER.len();
+        let end = content[after_marker..]
+            .find("\n## ")
+            .map(|pos| after_marker + pos)
+            .unwrap_or(content.len());
+
+        let mut result = String::with_capacity(content.len());
+        result.push_str(&content[..start]);
+        result.push_str(new_rules.trim_start());
+        if end < content.len() {
+            result.push_str(&content[end..]);
+        }
+        result
+    } else {
+        content.to_string()
+    }
+}
+
 // ── Agent Skill Installation ─────────────────────────────────
 
 /// The bundled SKILL.md content (included at compile time from skill/SKILL.md)
@@ -400,7 +596,7 @@ pub async fn run(cfg: &Config) -> Result<()> {
 
     let agents = detect_agents();
 
-    if agents.is_empty() {
+    let selections: Vec<usize> = if agents.is_empty() {
         println!("  {} No AI tools detected.", style("ℹ").blue());
         println!();
         println!("  Supported: Claude Code, Cursor, Cline, Windsurf, Codex,");
@@ -408,6 +604,7 @@ pub async fn run(cfg: &Config) -> Result<()> {
         println!("  Antigravity, Kilo, Factory, Continue, Claude Desktop, OpenClaw");
         println!();
         println!("  Install a tool and re-run: {}", style("ctxovrflw init").bold());
+        vec![]
     } else {
         // Multi-select with all checked by default
         let agent_names: Vec<String> = agents
@@ -416,7 +613,7 @@ pub async fn run(cfg: &Config) -> Result<()> {
             .collect();
         let defaults: Vec<bool> = agents.iter().map(|_| true).collect();
 
-        let selections = MultiSelect::new()
+        let sels = MultiSelect::new()
             .with_prompt(format!(
                 "  Found {} tool(s) — select which to configure {}",
                 agents.len(),
@@ -426,12 +623,12 @@ pub async fn run(cfg: &Config) -> Result<()> {
             .defaults(&defaults)
             .interact()?;
 
-        if selections.is_empty() {
+        if sels.is_empty() {
             println!("  {} No tools selected", style("→").dim());
         } else {
             println!();
             let port = cfg.port;
-            for &idx in &selections {
+            for &idx in &sels {
                 if let Err(e) = install_agent(&agents[idx], port) {
                     println!(
                         "  {} {} — {}",
@@ -448,6 +645,15 @@ pub async fn run(cfg: &Config) -> Result<()> {
                 style("ℹ").blue(),
                 style(format!("http://127.0.0.1:{port}/mcp/sse")).underlined()
             );
+        }
+        sels
+    };
+
+    // 5b. Agent rules files
+    if !selections.is_empty() {
+        let selected_agents: Vec<&DetectedAgent> = selections.iter().map(|&idx| &agents[idx]).collect();
+        if let Err(e) = install_agent_rules(&selected_agents) {
+            println!("  {} Rules install failed: {e}", style("⚠").yellow());
         }
     }
 

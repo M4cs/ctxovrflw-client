@@ -17,6 +17,10 @@ pub struct Embedder {
 
 impl Embedder {
     pub fn new() -> Result<Self> {
+        // Auto-set ORT_DYLIB_PATH if not set — look in common locations
+        #[cfg(feature = "onnx")]
+        Self::auto_discover_ort();
+
         let model_dir = Config::model_dir()?;
         let tokenizer_path = model_dir.join(TOKENIZER_FILENAME);
 
@@ -37,25 +41,27 @@ impl Embedder {
                 anyhow::bail!("ONNX model not found at {}", model_path.display());
             }
 
-            // Use catch_unwind to handle ort's internal mutex poisoning.
-            // If the ONNX runtime dylib fails to load, ort poisons a global
-            // mutex and all subsequent calls panic. This prevents a cascade.
-            let session_result = std::panic::catch_unwind(|| {
+            // Use catch_unwind around the entire ONNX stack.
+            // ort's load-dynamic feature can panic during dylib loading
+            // (lazy static init), not just during session creation.
+            // This catches panics at any level.
+            let model_path_clone = model_path.clone();
+            let session_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let b = ort::session::Session::builder().map_err(|e| anyhow::anyhow!("ONNX Session::builder failed: {e:?}"))?;
                 let b2 = b.with_intra_threads(2).map_err(|e| anyhow::anyhow!("ONNX with_intra_threads failed: {e:?}"))?;
-                b2.commit_from_file(&model_path).map_err(|e| anyhow::anyhow!(
+                b2.commit_from_file(&model_path_clone).map_err(|e| anyhow::anyhow!(
                     "ONNX commit_from_file failed: {e:?} (model: {}, ORT_DYLIB_PATH={})",
-                    model_path.display(),
+                    model_path_clone.display(),
                     std::env::var("ORT_DYLIB_PATH").unwrap_or_else(|_| "<not set>".into())
                 ))
-            });
+            }));
 
             let session = match session_result {
                 Ok(Ok(s)) => s,
                 Ok(Err(e)) => return Err(e),
                 Err(_) => anyhow::bail!(
-                    "ONNX runtime panicked (likely mutex poisoned from prior failed load). \
-                     Ensure ORT_DYLIB_PATH is set correctly and restart the daemon."
+                    "ONNX runtime failed to load. Ensure ORT_DYLIB_PATH is set correctly. \
+                     Semantic search will be unavailable until this is fixed."
                 ),
             };
 
@@ -157,6 +163,52 @@ impl Embedder {
     #[allow(dead_code)]
     pub fn tokenizer_path() -> Result<PathBuf> {
         Ok(Config::model_dir()?.join(TOKENIZER_FILENAME))
+    }
+
+    /// Auto-discover ONNX runtime library if ORT_DYLIB_PATH isn't set.
+    /// Searches: next to binary, ~/.ctxovrflw/lib/, ~/.local/lib/, /usr/local/lib/
+    #[cfg(feature = "onnx")]
+    fn auto_discover_ort() {
+        if std::env::var("ORT_DYLIB_PATH").is_ok() {
+            return; // Already set
+        }
+
+        let lib_name = if cfg!(target_os = "macos") {
+            "libonnxruntime.dylib"
+        } else {
+            "libonnxruntime.so"
+        };
+
+        let mut search_paths: Vec<PathBuf> = Vec::new();
+
+        // 1. Next to the binary
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                search_paths.push(dir.join(lib_name));
+            }
+        }
+
+        // 2. ~/.ctxovrflw/bin/ (default install.sh location)
+        if let Some(home) = dirs::home_dir() {
+            search_paths.push(home.join(".ctxovrflw").join("bin").join(lib_name));
+            // 3. ~/.ctxovrflw/lib/
+            search_paths.push(home.join(".ctxovrflw").join("lib").join(lib_name));
+            // 4. ~/.local/lib/ and ~/.local/bin/
+            search_paths.push(home.join(".local").join("lib").join(lib_name));
+            search_paths.push(home.join(".local").join("bin").join(lib_name));
+        }
+
+        // 5. System paths
+        search_paths.push(PathBuf::from("/usr/local/lib").join(lib_name));
+
+        for path in &search_paths {
+            if path.exists() {
+                // SAFETY: called once at startup before any threads use the env var
+                unsafe { std::env::set_var("ORT_DYLIB_PATH", path); }
+                tracing::info!("Auto-discovered ONNX runtime at {}", path.display());
+                return;
+            }
+        }
     }
 }
 

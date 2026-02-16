@@ -56,8 +56,8 @@ pub async fn run(cfg: &Config) -> Result<()> {
         return Ok(());
     }
 
-    let api_key = cfg.api_key.as_deref().unwrap();
-    let device_id = cfg.device_id.as_deref().unwrap();
+    let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no API key"))?;
+    let device_id = cfg.device_id.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no device ID"))?;
     let enc_key = get_encryption_key(cfg)?;
 
     let pushed = push(cfg, api_key, device_id, enc_key.as_ref()).await?;
@@ -76,8 +76,8 @@ pub async fn run_silent(cfg: &Config) -> Result<(usize, usize)> {
         return Ok((0, 0));
     }
 
-    let api_key = cfg.api_key.as_deref().unwrap();
-    let device_id = cfg.device_id.as_deref().unwrap();
+    let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no API key"))?;
+    let device_id = cfg.device_id.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no device ID"))?;
     let enc_key = get_encryption_key(cfg).unwrap_or(None);
 
     let pushed = push(cfg, api_key, device_id, enc_key.as_ref()).await?;
@@ -100,7 +100,10 @@ fn encrypt_memory(
     Ok((enc_content, enc_tags, hash))
 }
 
-/// Push unsynced local memories to cloud
+/// Max batch size for a single push request
+const PUSH_BATCH_SIZE: usize = 100;
+
+/// Push unsynced local memories to cloud (incremental, batched)
 async fn push(
     cfg: &Config,
     api_key: &str,
@@ -108,41 +111,64 @@ async fn push(
     enc_key: Option<&[u8; 32]>,
 ) -> Result<usize> {
     let conn = db::open()?;
-
-    let unsynced = get_unsynced_memories(&conn, enc_key)?;
-    if unsynced.is_empty() {
-        return Ok(0);
-    }
-
     let client = reqwest::Client::new();
-    let resp = client
-        .post(format!("{}/v1/sync/push", cfg.cloud_url))
-        .header("Authorization", format!("Bearer {api_key}"))
-        .json(&serde_json::json!({
-            "device_id": device_id,
-            "memories": unsynced,
-            "encrypted": enc_key.is_some(),
-        }))
-        .send()
-        .await?;
+    let mut total_synced: usize = 0;
 
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        anyhow::bail!("Push failed ({}): {}", status, body);
+    loop {
+        // Only fetch memories that haven't been synced, or were updated after last sync
+        let batch = get_unsynced_memories(&conn, enc_key, PUSH_BATCH_SIZE)?;
+        if batch.is_empty() {
+            break;
+        }
+
+        let batch_ids: Vec<String> = batch.iter()
+            .filter_map(|m| m.get("id").and_then(|v| v.as_str()).map(String::from))
+            .collect();
+
+        let resp = client
+            .post(format!("{}/v1/sync/push", cfg.cloud_url))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&serde_json::json!({
+                "device_id": device_id,
+                "memories": batch,
+                "encrypted": enc_key.is_some(),
+            }))
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Push failed ({}): {}", status, body);
+        }
+
+        let result: PushResponse = resp.json().await?;
+
+        // Mark successfully pushed memories with synced_at timestamp
+        if result.synced > 0 {
+            let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            for id in &batch_ids {
+                let _ = conn.execute(
+                    "UPDATE memories SET synced_at = ?1 WHERE id = ?2",
+                    rusqlite::params![now, id],
+                );
+            }
+        }
+
+        total_synced += result.synced;
+
+        if result.over_limit {
+            tracing::warn!("Memory limit reached on cloud. Upgrade your plan.");
+            break;
+        }
+
+        // If we got fewer than batch size, we're done
+        if batch.len() < PUSH_BATCH_SIZE {
+            break;
+        }
     }
 
-    let result: PushResponse = resp.json().await?;
-
-    if result.over_limit {
-        tracing::warn!("Memory limit reached on cloud. Upgrade your plan.");
-    }
-
-    if result.synced > 0 {
-        mark_synced(&conn, &unsynced)?;
-    }
-
-    Ok(result.synced)
+    Ok(total_synced)
 }
 
 /// Pull remote changes and merge into local DB
@@ -185,8 +211,8 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
         return Ok(false);
     }
 
-    let api_key = cfg.api_key.as_deref().unwrap();
-    let device_id = cfg.device_id.as_deref().unwrap();
+    let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no API key"))?;
+    let device_id = cfg.device_id.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no device ID"))?;
     let enc_key = get_encryption_key(cfg).unwrap_or(None);
     let conn = db::open()?;
 
@@ -248,30 +274,35 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
         .await?;
 
     if resp.status().is_success() {
-        let now = chrono::Utc::now().to_rfc3339();
-        conn.execute(
+        // Mark as synced
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let _ = conn.execute(
             "UPDATE memories SET synced_at = ?1 WHERE id = ?2",
             rusqlite::params![now, memory_id],
-        )?;
+        );
         return Ok(true);
     }
 
     Ok(false)
 }
 
-/// Get memories that need to be pushed, encrypting content if key is provided.
+/// Get memories that need to be pushed (never synced, or updated after last sync).
+/// Returns at most `limit` memories, encrypting content if key is provided.
 fn get_unsynced_memories(
     conn: &rusqlite::Connection,
     enc_key: Option<&[u8; 32]>,
+    limit: usize,
 ) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
         "SELECT id, content, type, tags, subject, source, deleted, created_at, updated_at, expires_at
          FROM memories
-         WHERE synced_at IS NULL OR updated_at > synced_at",
+         WHERE synced_at IS NULL OR updated_at > synced_at
+         ORDER BY updated_at ASC
+         LIMIT ?1"
     )?;
 
     let memories = stmt
-        .query_map([], |row| {
+        .query_map(rusqlite::params![limit as i64], |row| {
             let tags_str: String = row.get(3)?;
             let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
             let content: String = row.get(1)?;
@@ -330,19 +361,6 @@ fn get_unsynced_memories(
     Ok(result)
 }
 
-/// Mark memories as synced
-fn mark_synced(conn: &rusqlite::Connection, memories: &[serde_json::Value]) -> Result<()> {
-    let now = chrono::Utc::now().to_rfc3339();
-    let mut stmt = conn.prepare("UPDATE memories SET synced_at = ?1 WHERE id = ?2")?;
-
-    for mem in memories {
-        if let Some(id) = mem["id"].as_str() {
-            stmt.execute(rusqlite::params![now, id])?;
-        }
-    }
-
-    Ok(())
-}
 
 /// Merge remote memories into local DB, decrypting if key is provided.
 fn merge_remote_memories(
@@ -382,7 +400,7 @@ fn merge_remote_memories(
         if mem.deleted {
             if exists {
                 conn.execute(
-                    "UPDATE memories SET deleted = 1, updated_at = ?1, synced_at = ?1 WHERE id = ?2",
+                    "UPDATE memories SET deleted = 1, updated_at = ?1 WHERE id = ?2",
                     rusqlite::params![mem.updated_at, mem.id],
                 )?;
             }
@@ -394,7 +412,7 @@ fn merge_remote_memories(
         if exists {
             let rows = conn.execute(
                 "UPDATE memories SET content = ?1, type = ?2, tags = ?3, subject = ?4, source = ?5,
-                 expires_at = ?6, updated_at = ?7, synced_at = ?7, deleted = 0
+                 expires_at = ?6, updated_at = ?7, deleted = 0
                  WHERE id = ?8 AND updated_at < ?7",
                 rusqlite::params![content, mem.memory_type, tags_json, mem.subject, mem.source, mem.expires_at, mem.updated_at, mem.id],
             )?;
@@ -411,8 +429,8 @@ fn merge_remote_memories(
             }
         } else {
             conn.execute(
-                "INSERT INTO memories (id, content, type, tags, subject, source, expires_at, deleted, created_at, updated_at, synced_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?9)",
+                "INSERT INTO memories (id, content, type, tags, subject, source, expires_at, deleted, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9)",
                 rusqlite::params![mem.id, content, mem.memory_type, tags_json, mem.subject, mem.source, mem.expires_at, mem.created_at, mem.updated_at],
             )?;
 

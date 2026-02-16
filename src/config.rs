@@ -89,6 +89,10 @@ impl Tier {
     pub fn consolidation_enabled(&self) -> bool {
         matches!(self, Tier::Pro)
     }
+
+    pub fn knowledge_graph_enabled(&self) -> bool {
+        matches!(self, Tier::Pro)
+    }
 }
 
 fn default_port() -> u16 {
@@ -153,7 +157,15 @@ impl Config {
     pub fn save(&self) -> Result<()> {
         let path = Self::config_path()?;
         let contents = toml::to_string_pretty(self)?;
-        std::fs::write(&path, contents)?;
+        std::fs::write(&path, &contents)?;
+
+        // Restrict permissions to owner-only (600) — config contains API keys and encryption keys
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+        }
+
         Ok(())
     }
 

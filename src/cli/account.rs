@@ -1,5 +1,5 @@
 use anyhow::Result;
-use crate::config::Config;
+use crate::config::{Config, Tier};
 
 #[derive(serde::Deserialize)]
 struct ProfileResponse {
@@ -65,6 +65,19 @@ pub async fn run(cfg: &Config) -> Result<()> {
 
     let profile: ProfileResponse = resp.json().await?;
     let u = &profile.user;
+
+    // Sync tier from cloud → local config if it changed
+    let cloud_tier = match u.tier.as_str() {
+        "standard" => Tier::Standard,
+        "pro" => Tier::Pro,
+        _ => Tier::Free,
+    };
+    if cfg.tier != cloud_tier {
+        let mut updated_cfg = Config::load()?;
+        updated_cfg.tier = cloud_tier;
+        updated_cfg.save()?;
+        println!("  ✓ Tier updated locally: {:?} → {:?}\n", cfg.tier, updated_cfg.tier);
+    }
 
     // Tier display
     let tier_label = match u.tier.as_str() {

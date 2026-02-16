@@ -406,7 +406,7 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
 name = "ctxovrflw"
-version = "0.1.2"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2494,6 +2494,7 @@ dependencies = [
  "futures-util",
  "http",
  "http-body",
+ "http-body-util",
  "iri-string",
  "pin-project-lite",
  "tower",

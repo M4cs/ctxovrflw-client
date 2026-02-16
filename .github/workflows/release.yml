@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version tag (e.g. v0.2.5)"
+        required: false
+        type: string
 
 env:
   CARGO_TERM_COLOR: always
@@ -65,6 +70,8 @@ jobs:
           echo "ONNX runtime contents:"
           find onnxruntime/lib -type f | head -10
 
+
+
       - name: Build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
@@ -119,7 +126,7 @@ jobs:
           UPLOAD_KEY: ${{ secrets.RELEASE_UPLOAD_KEY }}
           API_URL: https://api.ctxovrflw.dev
         run: |
-          VERSION="${GITHUB_REF_NAME:-dev}"
+          VERSION="${{ inputs.version || github.ref_name }}"
           for dir in artifacts/*/; do
             file=$(find "$dir" -name "*.tar.gz" | head -1)
             name=$(basename "$file" .tar.gz)

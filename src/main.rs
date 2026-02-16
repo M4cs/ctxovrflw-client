@@ -7,6 +7,7 @@ mod embed;
 mod http;
 mod mcp;
 mod sync;
+mod webhooks;
 
 use clap::Parser;
 use cli::{Cli, Command};
