@@ -37,11 +37,15 @@ If this returns a JSON response, ctxovrflw is running. If it fails, follow the i
 ### Install ctxovrflw
 
 ```bash
+# Linux / macOS
 curl -fsSL https://ctxovrflw.dev/install.sh | sh
+
+# Windows (PowerShell)
+irm ctxovrflw.dev/install.ps1 | iex
 ```
 
 This installs the daemon binary, ONNX runtime (for semantic search), and the embedding model.
-Supports Linux (x64, arm64) and macOS (x64, arm64).
+Supports Windows (x64), Linux (x64, arm64), and macOS (x64, arm64).
 
 After install:
 ```bash

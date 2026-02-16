@@ -40,6 +40,11 @@ jobs:
             artifact: ctxovrflw-darwin-arm64
             onnx_arch: osx-arm64
             onnx_ext: tgz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: ctxovrflw-windows-x64
+            onnx_arch: win-x64
+            onnx_ext: zip
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -57,11 +62,16 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
       - name: Download ONNX Runtime
+        shell: bash
         run: |
           curl -L -o onnxruntime.${{ matrix.onnx_ext }} \
             "https://github.com/microsoft/onnxruntime/releases/download/v${{ env.ONNX_VERSION }}/onnxruntime-${{ matrix.onnx_arch }}-${{ env.ONNX_VERSION }}.${{ matrix.onnx_ext }}"
           mkdir -p onnxruntime
-          tar xzf onnxruntime.${{ matrix.onnx_ext }} -C onnxruntime
+          if [[ "${{ matrix.onnx_ext }}" == "zip" ]]; then
+            unzip -o onnxruntime.zip -d onnxruntime
+          else
+            tar xzf onnxruntime.${{ matrix.onnx_ext }} -C onnxruntime
+          fi
           # Flatten if nested (some archives have a top-level dir)
           if [ ! -d onnxruntime/lib ]; then
             mv onnxruntime/onnxruntime-*/lib onnxruntime/lib
@@ -73,11 +83,14 @@ jobs:
 
 
       - name: Build
+        shell: bash
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: |
           if [[ "${{ matrix.os }}" == macos-* ]]; then
             export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'libonnxruntime*.dylib' -not -name '*1.23*' | head -1)"
+          elif [[ "${{ matrix.os }}" == windows-* ]]; then
+            export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'onnxruntime.dll' | head -1)"
           else
             export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'libonnxruntime.so' | head -1)"
           fi
@@ -86,6 +99,7 @@ jobs:
           cargo build --release --features onnx --target ${{ matrix.target }}
 
       - name: Download ONNX model
+        shell: bash
         run: |
           mkdir -p models
           curl -fsSL -o models/all-MiniLM-L6-v2-q8.onnx \
@@ -94,14 +108,22 @@ jobs:
             "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
 
       - name: Package
+        shell: bash
         run: |
           mkdir -p dist/models
-          cp target/${{ matrix.target }}/release/ctxovrflw dist/
-          # Include ONNX runtime lib — find it regardless of exact path
-          find onnxruntime -name "libonnxruntime*.dylib" -exec cp {} dist/ \; 2>/dev/null || true
-          find onnxruntime -name "libonnxruntime.so*" -exec cp {} dist/ \; 2>/dev/null || true
-          # Verify we got the lib
-          ls -la dist/libonnx* || echo "WARNING: No ONNX runtime lib found!"
+          # Copy binary (with .exe on Windows)
+          if [[ "${{ matrix.os }}" == windows-* ]]; then
+            cp target/${{ matrix.target }}/release/ctxovrflw.exe dist/
+            # Include ONNX runtime DLL
+            find onnxruntime -name "onnxruntime.dll" -exec cp {} dist/ \; 2>/dev/null || true
+            ls -la dist/onnxruntime.dll || echo "WARNING: No ONNX runtime DLL found!"
+          else
+            cp target/${{ matrix.target }}/release/ctxovrflw dist/
+            # Include ONNX runtime lib
+            find onnxruntime -name "libonnxruntime*.dylib" -exec cp {} dist/ \; 2>/dev/null || true
+            find onnxruntime -name "libonnxruntime.so*" -exec cp {} dist/ \; 2>/dev/null || true
+            ls -la dist/libonnx* || echo "WARNING: No ONNX runtime lib found!"
+          fi
           # Include ONNX model + tokenizer
           cp models/all-MiniLM-L6-v2-q8.onnx dist/models/
           cp models/tokenizer.json dist/models/
