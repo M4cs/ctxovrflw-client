@@ -16,6 +16,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use rusqlite::{params, Connection};
+use std::collections::HashSet;
 use std::io;
 
 use crate::config::Config;
@@ -72,11 +73,13 @@ enum Mode {
     Detail,
     Search,
     ConfirmDelete,
+    Syncing,
 }
 
 struct App {
     memories: Vec<MemoryRow>,
     filtered: Vec<usize>, // indices into memories
+    selected: HashSet<String>, // selected memory IDs for bulk ops
     table_state: TableState,
     search: String,
     sync_filter: SyncFilter,
@@ -108,6 +111,7 @@ impl App {
         App {
             memories,
             filtered,
+            selected: HashSet::new(),
             table_state,
             search: String::new(),
             sync_filter: SyncFilter::All,
@@ -120,6 +124,15 @@ impl App {
             unsynced_count,
             modified_count,
         }
+    }
+
+    fn recalc_counts(&mut self) {
+        self.total_count = self.memories.len();
+        self.synced_count = self.memories.iter().filter(|m| {
+            m.synced_at.is_some() && m.synced_at.as_deref() >= Some(m.updated_at.as_str())
+        }).count();
+        self.unsynced_count = self.memories.iter().filter(|m| m.synced_at.is_none()).count();
+        self.modified_count = self.total_count - self.synced_count - self.unsynced_count;
     }
 
     fn apply_filters(&mut self) {
@@ -162,6 +175,29 @@ impl App {
         self.table_state.selected()
             .and_then(|i| self.filtered.get(i))
             .map(|&idx| &self.memories[idx])
+    }
+
+    fn toggle_select_current(&mut self) {
+        if let Some(mem) = self.selected_memory() {
+            let id = mem.id.clone();
+            if self.selected.contains(&id) {
+                self.selected.remove(&id);
+            } else {
+                self.selected.insert(id);
+            }
+            // Move cursor down after toggle
+            self.move_down();
+        }
+    }
+
+    fn select_all_visible(&mut self) {
+        for &idx in &self.filtered {
+            self.selected.insert(self.memories[idx].id.clone());
+        }
+    }
+
+    fn deselect_all(&mut self) {
+        self.selected.clear();
     }
 
     fn sync_status(m: &MemoryRow) -> (&str, Color) {
@@ -218,7 +254,7 @@ fn load_memories(conn: &Connection) -> Result<Vec<MemoryRow>> {
 
 // ── Entry point ─────────────────────────────────────────────────────────
 
-pub async fn run(_cfg: &Config) -> Result<()> {
+pub async fn run(cfg: &Config) -> Result<()> {
     let conn = db::open()?;
     let memories = load_memories(&conn)?;
 
@@ -236,7 +272,7 @@ pub async fn run(_cfg: &Config) -> Result<()> {
 
     let mut app = App::new(memories);
 
-    let res = run_loop(&mut terminal, &mut app, &conn);
+    let res = run_loop(&mut terminal, &mut app, &conn, cfg);
 
     // Restore terminal
     disable_raw_mode()?;
@@ -250,16 +286,18 @@ fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
     conn: &Connection,
+    cfg: &Config,
 ) -> Result<()> {
     loop {
         terminal.draw(|f| ui(f, app))?;
 
         if let Event::Key(key) = event::read()? {
             match app.mode {
-                Mode::List => handle_list_key(app, key, conn)?,
+                Mode::List => handle_list_key(app, key, conn, cfg)?,
                 Mode::Detail => handle_detail_key(app, key),
                 Mode::Search => handle_search_key(app, key),
                 Mode::ConfirmDelete => handle_delete_key(app, key, conn)?,
+                Mode::Syncing => {} // non-interactive, will transition back
             }
         }
 
@@ -271,7 +309,7 @@ fn run_loop(
 
 // ── Key Handlers ────────────────────────────────────────────────────────
 
-fn handle_list_key(app: &mut App, key: KeyEvent, _conn: &Connection) -> Result<()> {
+fn handle_list_key(app: &mut App, key: KeyEvent, conn: &Connection, cfg: &Config) -> Result<()> {
     match key.code {
         KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
@@ -289,16 +327,54 @@ fn handle_list_key(app: &mut App, key: KeyEvent, _conn: &Connection) -> Result<(
                 app.mode = Mode::Detail;
             }
         }
+        KeyCode::Char(' ') => {
+            app.toggle_select_current();
+        }
+        KeyCode::Char('a') => {
+            app.select_all_visible();
+            app.status_msg = Some(format!("Selected {} memories", app.selected.len()));
+        }
+        KeyCode::Char('A') => {
+            app.deselect_all();
+            app.status_msg = Some("Deselected all".into());
+        }
         KeyCode::Char('/') => {
             app.mode = Mode::Search;
             app.status_msg = Some("Type to search, Enter to confirm, Esc to cancel".into());
         }
-        KeyCode::Char('s') => {
+        KeyCode::Char('s') if !key.modifiers.contains(KeyModifiers::SHIFT) => {
             app.sync_filter = app.sync_filter.next();
             app.apply_filters();
         }
+        KeyCode::Char('S') => {
+            // Trigger sync
+            app.status_msg = Some("Syncing...".into());
+            app.mode = Mode::Syncing;
+
+            // We need to temporarily leave raw mode to run sync
+            let _ = disable_raw_mode();
+            let rt = tokio::runtime::Handle::current();
+            let sync_result = rt.block_on(crate::sync::run_silent(cfg));
+            let _ = enable_raw_mode();
+
+            match sync_result {
+                Ok((pushed, pulled)) => {
+                    // Reload memories from DB to reflect sync changes
+                    if let Ok(fresh) = load_memories(conn) {
+                        app.memories = fresh;
+                        app.recalc_counts();
+                        app.apply_filters();
+                    }
+                    app.status_msg = Some(format!("Sync complete — pushed {pushed}, pulled {pulled}"));
+                }
+                Err(e) => {
+                    app.status_msg = Some(format!("Sync failed: {e}"));
+                }
+            }
+            app.mode = Mode::List;
+        }
         KeyCode::Char('d') => {
-            if app.selected_memory().is_some() {
+            if !app.selected.is_empty() || app.selected_memory().is_some() {
                 app.mode = Mode::ConfirmDelete;
             }
         }
@@ -315,6 +391,17 @@ fn handle_detail_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Down | KeyCode::Char('j') => {
             app.detail_scroll = app.detail_scroll.saturating_add(1);
+        }
+        KeyCode::Char(' ') => {
+            // Toggle selection from detail view
+            if let Some(mem) = app.selected_memory() {
+                let id = mem.id.clone();
+                if app.selected.contains(&id) {
+                    app.selected.remove(&id);
+                } else {
+                    app.selected.insert(id);
+                }
+            }
         }
         _ => {}
     }
@@ -351,11 +438,23 @@ fn handle_search_key(app: &mut App, key: KeyEvent) {
 fn handle_delete_key(app: &mut App, key: KeyEvent, conn: &Connection) -> Result<()> {
     match key.code {
         KeyCode::Char('y') | KeyCode::Char('Y') => {
-            if let Some(mem) = app.selected_memory() {
+            if !app.selected.is_empty() {
+                // Bulk delete all selected
+                let count = app.selected.len();
+                let ids: Vec<String> = app.selected.drain().collect();
+                for id in &ids {
+                    db::memories::delete(conn, id)?;
+                }
+                app.memories.retain(|m| !ids.contains(&m.id));
+                app.recalc_counts();
+                app.apply_filters();
+                app.status_msg = Some(format!("Deleted {count} memories"));
+            } else if let Some(mem) = app.selected_memory() {
+                // Single delete
                 let id = mem.id.clone();
                 db::memories::delete(conn, &id)?;
-                // Remove from memories and rebuild filters
                 app.memories.retain(|m| m.id != id);
+                app.recalc_counts();
                 app.apply_filters();
                 app.status_msg = Some(format!("Deleted memory {}", &id[..8]));
             }
@@ -409,7 +508,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         }
     };
 
-    let header = Line::from(vec![
+    let mut spans = vec![
         Span::styled(" ctxovrflw ", Style::default().fg(Color::Cyan).bold()),
         Span::raw("│ "),
         Span::styled(format!("{} memories", app.total_count), Style::default().fg(Color::White)),
@@ -425,7 +524,17 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             sync_style(app.sync_filter, app.sync_filter),
         ),
         Span::styled(" [s] ", Style::default().fg(Color::DarkGray)),
-    ]);
+    ];
+
+    if !app.selected.is_empty() {
+        spans.push(Span::raw("│ "));
+        spans.push(Span::styled(
+            format!("◆ {} selected", app.selected.len()),
+            Style::default().fg(Color::Yellow).bold(),
+        ));
+    }
+
+    let header = Line::from(spans);
 
     let block = Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::DarkGray));
     let p = Paragraph::new(header).block(block);
@@ -434,6 +543,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
 fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
     let header = Row::new(vec![
+        Cell::from(" ").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("ID").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Type").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Subject").style(Style::default().fg(Color::Cyan).bold()),
@@ -446,6 +556,7 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
     let rows: Vec<Row> = app.filtered.iter().map(|&idx| {
         let m = &app.memories[idx];
         let (sync_label, sync_color) = App::sync_status(m);
+        let is_selected = app.selected.contains(&m.id);
 
         let content_preview: String = m.content.chars().take(60).collect::<String>()
             .replace('\n', " ");
@@ -461,10 +572,13 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
             m.tags.join(", ")
         };
 
-        // Parse and format date compactly
-        let created_short = &m.created_at[..10]; // YYYY-MM-DD
+        let created_short = &m.created_at[..10];
 
-        Row::new(vec![
+        let select_marker = if is_selected { "◆" } else { " " };
+        let select_color = if is_selected { Color::Yellow } else { Color::DarkGray };
+
+        let row = Row::new(vec![
+            Cell::from(select_marker).style(Style::default().fg(select_color)),
             Cell::from(m.id[..8].to_string()).style(Style::default().fg(Color::DarkGray)),
             Cell::from(m.memory_type.clone()),
             Cell::from(m.subject.clone().unwrap_or_else(|| "—".into())).style(Style::default().fg(Color::Magenta)),
@@ -472,10 +586,17 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
             Cell::from(content_preview),
             Cell::from(sync_label).style(Style::default().fg(sync_color)),
             Cell::from(created_short.to_string()).style(Style::default().fg(Color::DarkGray)),
-        ])
+        ]);
+
+        if is_selected {
+            row.style(Style::default().fg(Color::Yellow))
+        } else {
+            row
+        }
     }).collect();
 
     let widths = [
+        Constraint::Length(2),    // Select marker
         Constraint::Length(10),   // ID
         Constraint::Length(12),   // Type
         Constraint::Length(16),   // Subject
@@ -513,25 +634,46 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             Span::raw(&app.search),
             Span::styled("▌", Style::default().fg(Color::Cyan)),
         ])
+    } else if app.mode == Mode::Syncing {
+        Line::from(vec![
+            Span::styled(" ⟳ Syncing...", Style::default().fg(Color::Cyan).bold()),
+        ])
     } else if let Some(msg) = &app.status_msg {
         Line::from(vec![
             Span::styled(format!(" {msg}"), Style::default().fg(Color::Yellow)),
         ])
     } else {
-        Line::from(vec![
+        let mut spans = vec![
             Span::styled(" ↑↓", Style::default().fg(Color::DarkGray)),
-            Span::raw(" navigate  "),
+            Span::raw(" nav  "),
+            Span::styled("Space", Style::default().fg(Color::DarkGray)),
+            Span::raw(" select  "),
+            Span::styled("a", Style::default().fg(Color::DarkGray)),
+            Span::raw("/"),
+            Span::styled("A", Style::default().fg(Color::DarkGray)),
+            Span::raw(" all/none  "),
             Span::styled("Enter", Style::default().fg(Color::DarkGray)),
             Span::raw(" view  "),
             Span::styled("/", Style::default().fg(Color::DarkGray)),
             Span::raw(" search  "),
             Span::styled("s", Style::default().fg(Color::DarkGray)),
-            Span::raw(" sync filter  "),
+            Span::raw(" filter  "),
             Span::styled("d", Style::default().fg(Color::DarkGray)),
             Span::raw(" delete  "),
+            Span::styled("S", Style::default().fg(Color::DarkGray)),
+            Span::raw(" sync  "),
             Span::styled("q", Style::default().fg(Color::DarkGray)),
             Span::raw(" quit"),
-        ])
+        ];
+
+        if !app.selected.is_empty() {
+            spans.insert(0, Span::styled(
+                format!("◆{} ", app.selected.len()),
+                Style::default().fg(Color::Yellow).bold(),
+            ));
+        }
+
+        Line::from(spans)
     };
 
     f.render_widget(Paragraph::new(content), area);
@@ -544,11 +686,17 @@ fn render_detail(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let (sync_label, _) = App::sync_status(mem);
+    let is_selected = app.selected.contains(&mem.id);
 
     let mut lines = vec![
         Line::from(vec![
             Span::styled("ID:       ", Style::default().fg(Color::Cyan).bold()),
             Span::raw(&mem.id),
+            if is_selected {
+                Span::styled("  ◆ selected", Style::default().fg(Color::Yellow))
+            } else {
+                Span::raw("")
+            },
         ]),
         Line::from(vec![
             Span::styled("Type:     ", Style::default().fg(Color::Cyan).bold()),
@@ -589,7 +737,7 @@ fn render_detail(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let block = Block::default()
-        .title(" Memory Detail ")
+        .title(" Memory Detail (Space: toggle select) ")
         .title_style(Style::default().fg(Color::Cyan).bold())
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::Cyan));
@@ -603,15 +751,26 @@ fn render_detail(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_delete_confirm(f: &mut Frame, app: &App, area: Rect) {
-    let id_short = app.selected_memory()
-        .map(|m| m.id[..8].to_string())
-        .unwrap_or_default();
+    let delete_count = if !app.selected.is_empty() {
+        app.selected.len()
+    } else {
+        1
+    };
+
+    let desc = if delete_count == 1 && app.selected.is_empty() {
+        let id_short = app.selected_memory()
+            .map(|m| m.id[..8].to_string())
+            .unwrap_or_default();
+        format!("memory {id_short}")
+    } else {
+        format!("{delete_count} selected memories")
+    };
 
     let text = Text::from(vec![
         Line::from(""),
         Line::from(vec![
-            Span::raw("  Delete memory "),
-            Span::styled(&id_short, Style::default().fg(Color::Red).bold()),
+            Span::raw("  Delete "),
+            Span::styled(&desc, Style::default().fg(Color::Red).bold()),
             Span::raw("?"),
         ]),
         Line::from(""),
