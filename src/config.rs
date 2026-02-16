@@ -33,6 +33,10 @@ pub struct Config {
     #[serde(default)]
     pub pin_verifier: Option<String>,
 
+    /// Server-provided random salt for key derivation (hex)
+    #[serde(default)]
+    pub key_salt: Option<String>,
+
     /// Cached derived key (hex-encoded), cleared after 30 days
     #[serde(default)]
     pub cached_key: Option<String>,
@@ -220,7 +224,7 @@ impl Config {
 
     /// Check if zero-knowledge encryption is set up.
     pub fn is_encrypted(&self) -> bool {
-        self.pin_verifier.is_some() && self.email.is_some()
+        self.pin_verifier.is_some() && self.key_salt.is_some()
     }
 
     /// Generate a device fingerprint from hostname + OS
@@ -260,6 +264,7 @@ impl Default for Config {
             auto_sync: default_auto_sync(),
             email: None,
             pin_verifier: None,
+            key_salt: None,
             cached_key: None,
             key_cached_at: None,
             remote_daemon_url: None,

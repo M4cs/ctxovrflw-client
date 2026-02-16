@@ -317,20 +317,28 @@ async fn email_password_flow(client: &reqwest::Client, cloud_url: &str) -> Resul
 #[derive(serde::Deserialize)]
 struct PinVerifierResponse {
     has_pin: bool,
-    pin_verifier: Option<String>,
+    key_salt: Option<String>,
 }
 
-/// Set up zero-knowledge sync encryption.
-/// PIN verifier is stored on the cloud account so all devices share the same PIN.
+/// Response from POST /v1/auth/setup-pin or /v1/auth/verify-pin
+#[derive(serde::Deserialize)]
+struct PinActionResponse {
+    ok: Option<bool>,
+    key_salt: Option<String>,
+    pin_verifier: Option<String>,
+    error: Option<String>,
+}
+
+/// Set up sync encryption. Server generates salt, does key derivation + verification.
+/// Client derives the same key using the server-provided salt.
 async fn setup_sync_pin(cfg: &Config) -> Result<()> {
-    let email = cfg.email.as_deref().ok_or_else(|| anyhow::anyhow!("No email in config — re-run `ctxovrflw login`"))?;
     let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in"))?;
     let client = reqwest::Client::new();
 
     println!("\n🔐 Zero-Knowledge Encryption Setup");
     println!("Your memories are encrypted before leaving this device.\n");
 
-    // Check if account already has a PIN set (from another device)
+    // Check if account already has a PIN set
     let resp = client
         .get(format!("{}/v1/auth/pin-verifier", cfg.cloud_url))
         .header("Authorization", format!("Bearer {api_key}"))
@@ -340,12 +348,11 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
     let account_pin: PinVerifierResponse = if resp.status().is_success() {
         resp.json().await?
     } else {
-        // Old server without pin-verifier endpoint — fall back to local-only
-        PinVerifierResponse { has_pin: false, pin_verifier: None }
+        PinVerifierResponse { has_pin: false, key_salt: None }
     };
 
     if !account_pin.has_pin {
-        // First device for this account — create a new PIN
+        // First device — create PIN
         print!("Create sync PIN (min 6 chars): ");
         std::io::Write::flush(&mut std::io::stdout())?;
         let mut pin = String::new();
@@ -363,23 +370,31 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
             anyhow::bail!("PINs don't match.");
         }
 
-        let key = crypto::derive_key(&pin, email);
-        let verifier = crypto::create_pin_verifier(&key)?;
-
-        // Store verifier on cloud account (so other devices can verify same PIN)
-        let upload_resp = client
-            .post(format!("{}/v1/auth/pin-verifier", cfg.cloud_url))
+        // Server generates salt, derives key, creates verifier
+        let setup_resp = client
+            .post(format!("{}/v1/auth/setup-pin", cfg.cloud_url))
             .header("Authorization", format!("Bearer {api_key}"))
-            .json(&serde_json::json!({ "pin_verifier": verifier }))
+            .json(&serde_json::json!({ "pin": pin }))
             .send()
             .await?;
 
-        if !upload_resp.status().is_success() {
-            tracing::warn!("Failed to store PIN verifier on cloud — local-only verification");
+        if !setup_resp.status().is_success() {
+            let err: PinActionResponse = setup_resp.json().await.unwrap_or(PinActionResponse {
+                ok: None, key_salt: None, pin_verifier: None,
+                error: Some("Server error".to_string()),
+            });
+            anyhow::bail!("Failed to set up PIN: {}", err.error.unwrap_or_default());
         }
 
-        // Also store locally for offline verification
+        let result: PinActionResponse = setup_resp.json().await?;
+        let key_salt = result.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
+        let verifier = result.pin_verifier.ok_or_else(|| anyhow::anyhow!("Server didn't return verifier"))?;
+
+        // Derive same key locally using server-provided salt
+        let key = crypto::derive_key(&pin, &key_salt);
+
         let mut cfg = Config::load()?;
+        cfg.key_salt = Some(key_salt);
         cfg.pin_verifier = Some(verifier);
         cfg.cache_key(&key)?;
 
@@ -387,32 +402,42 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
         println!("\n⚠️  IMPORTANT: Use the same sync PIN on all your devices.");
         println!("   If you lose your sync PIN, your cloud memories cannot be recovered.");
     } else {
-        // Account already has a PIN — this is a new device, verify same PIN
-        let cloud_verifier = account_pin.pin_verifier.unwrap();
-
+        // Subsequent device — verify PIN via server
         print!("Enter your sync PIN: ");
         std::io::Write::flush(&mut std::io::stdout())?;
         let mut pin = String::new();
         std::io::stdin().read_line(&mut pin)?;
         let pin = pin.trim().to_string();
 
-        let key = crypto::derive_key(&pin, email);
+        let verify_resp = client
+            .post(format!("{}/v1/auth/verify-pin", cfg.cloud_url))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&serde_json::json!({ "pin": pin }))
+            .send()
+            .await?;
 
-        // Verify against the cloud-stored verifier
-        if !crypto::verify_pin(&key, &cloud_verifier) {
-            // Clear auth state — failed PIN means this device can't sync
+        if !verify_resp.status().is_success() {
+            // Clear auth on wrong PIN
             let mut bad_cfg = Config::load()?;
             bad_cfg.api_key = None;
             bad_cfg.device_id = None;
             bad_cfg.email = None;
             bad_cfg.pin_verifier = None;
+            bad_cfg.key_salt = None;
             bad_cfg.save()?;
             anyhow::bail!("Wrong sync PIN. You've been logged out. Run `ctxovrflw login` to try again.");
         }
 
-        // Store locally
+        let result: PinActionResponse = verify_resp.json().await?;
+        let key_salt = result.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
+        let verifier = result.pin_verifier.ok_or_else(|| anyhow::anyhow!("Server didn't return verifier"))?;
+
+        // Derive key locally using server-provided salt
+        let key = crypto::derive_key(&pin, &key_salt);
+
         let mut cfg = Config::load()?;
-        cfg.pin_verifier = Some(cloud_verifier);
+        cfg.key_salt = Some(key_salt);
+        cfg.pin_verifier = Some(verifier);
         cfg.cache_key(&key)?;
 
         println!("✓ PIN verified — encryption key cached (30-day TTL)");
@@ -436,7 +461,7 @@ pub async fn run_with_key(cfg: &Config, key: &str) -> Result<()> {
 
 /// Re-prompt for sync PIN when the cached key has expired.
 async fn prompt_sync_pin(cfg: &Config) -> Result<()> {
-    let email = cfg.email.as_deref().ok_or_else(|| anyhow::anyhow!("No email in config"))?;
+    let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in"))?;
 
     print!("Sync PIN: ");
     std::io::Write::flush(&mut std::io::stdout())?;
@@ -444,43 +469,40 @@ async fn prompt_sync_pin(cfg: &Config) -> Result<()> {
     std::io::stdin().read_line(&mut pin)?;
     let pin = pin.trim().to_string();
 
-    let key = crypto::derive_key(&pin, email);
-
-    // Try local verifier first, fall back to cloud
-    let verifier = if let Some(v) = &cfg.pin_verifier {
-        Some(v.clone())
-    } else if let Some(api_key) = &cfg.api_key {
-        // Fetch from cloud
-        let client = reqwest::Client::new();
-        let resp = client
-            .get(format!("{}/v1/auth/pin-verifier", cfg.cloud_url))
-            .header("Authorization", format!("Bearer {api_key}"))
-            .send()
-            .await
-            .ok();
-        if let Some(resp) = resp {
-            let pv: Option<PinVerifierResponse> = resp.json().await.ok();
-            pv.and_then(|p| p.pin_verifier)
-        } else {
-            None
-        }
-    } else {
-        None
-    };
-
-    if let Some(verifier) = &verifier {
+    // If we have the salt locally, derive and verify locally
+    if let (Some(salt), Some(verifier)) = (&cfg.key_salt, &cfg.pin_verifier) {
+        let key = crypto::derive_key(&pin, salt);
         if !crypto::verify_pin(&key, verifier) {
             anyhow::bail!("Wrong sync PIN.");
         }
-        // Cache verifier locally if we fetched from cloud
-        if cfg.pin_verifier.is_none() {
-            let mut cfg = cfg.clone();
-            cfg.pin_verifier = Some(verifier.clone());
-            cfg.save()?;
-        }
+        let mut cfg = cfg.clone();
+        cfg.cache_key(&key)?;
+        println!("✓ Sync PIN accepted, key cached for 30 days.");
+        return Ok(());
     }
 
+    // Otherwise verify via server
+    let client = reqwest::Client::new();
+    let verify_resp = client
+        .post(format!("{}/v1/auth/verify-pin", cfg.cloud_url))
+        .header("Authorization", format!("Bearer {api_key}"))
+        .json(&serde_json::json!({ "pin": pin }))
+        .send()
+        .await?;
+
+    if !verify_resp.status().is_success() {
+        anyhow::bail!("Wrong sync PIN.");
+    }
+
+    let result: PinActionResponse = verify_resp.json().await?;
+    let key_salt = result.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
+    let key = crypto::derive_key(&pin, &key_salt);
+
     let mut cfg = cfg.clone();
+    cfg.key_salt = Some(key_salt);
+    if let Some(v) = result.pin_verifier {
+        cfg.pin_verifier = Some(v);
+    }
     cfg.cache_key(&key)?;
     println!("✓ Sync PIN accepted, key cached for 30 days.");
     Ok(())
