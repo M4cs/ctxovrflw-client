@@ -87,12 +87,13 @@ jobs:
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: |
+          WORKSPACE="$(pwd)"
           if [[ "${{ matrix.os }}" == macos-* ]]; then
-            export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'libonnxruntime*.dylib' -not -name '*1.23*' | head -1)"
+            export ORT_DYLIB_PATH="$(find "$WORKSPACE/onnxruntime" -name 'libonnxruntime*.dylib' -not -name '*1.23*' | head -1)"
           elif [[ "${{ matrix.os }}" == windows-* ]]; then
-            export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'onnxruntime.dll' | head -1)"
+            export ORT_DYLIB_PATH="$(find "$WORKSPACE/onnxruntime" -name 'onnxruntime.dll' | head -1)"
           else
-            export ORT_DYLIB_PATH="$(find ${{ github.workspace }}/onnxruntime -name 'libonnxruntime.so' | head -1)"
+            export ORT_DYLIB_PATH="$(find "$WORKSPACE/onnxruntime" -name 'libonnxruntime.so' | head -1)"
           fi
           echo "ORT_DYLIB_PATH=$ORT_DYLIB_PATH"
           ls -la "$ORT_DYLIB_PATH"
