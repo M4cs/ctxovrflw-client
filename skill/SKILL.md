@@ -8,9 +8,9 @@ description: >
   context as it comes up. Cross-tool: what Cursor stores, Claude Code can recall.
 metadata:
   author: ctxovrflw
-  version: "1.0"
+  version: "2.0"
   website: https://ctxovrflw.dev
-compatibility: Requires ctxovrflw daemon running locally (MCP server)
+compatibility: Requires ctxovrflw daemon running locally (MCP server on port 7437)
 ---
 
 # ctxovrflw — Shared Memory
@@ -18,7 +18,81 @@ compatibility: Requires ctxovrflw daemon running locally (MCP server)
 You have access to **ctxovrflw**, a shared memory layer that persists across sessions and is
 accessible by every AI tool the user runs (Cursor, Claude Code, Cline, Windsurf, etc.).
 
-You interact with it via the MCP tools: `remember`, `recall`, `forget`, and `status`.
+You interact with it via the MCP tools: `remember`, `recall`, `forget`, `status`, `consolidate`,
+`add_entity`, `add_relation`, `traverse`, `get_relations`, `subjects`, and `manage_webhooks`.
+
+## ⚠️ Prerequisites — ctxovrflw Must Be Installed & Running
+
+This skill requires the **ctxovrflw daemon** running locally. If it's not installed or not running,
+**none of the MCP tools will work.**
+
+### Check if running
+
+```bash
+curl -s http://127.0.0.1:7437/health
+```
+
+If this returns a JSON response, ctxovrflw is running. If it fails, follow the install steps below.
+
+### Install ctxovrflw
+
+```bash
+curl -fsSL https://ctxovrflw.dev/install.sh | sh
+```
+
+This installs the daemon binary, ONNX runtime (for semantic search), and the embedding model.
+Supports Linux (x64, arm64) and macOS (x64, arm64).
+
+After install:
+```bash
+ctxovrflw init     # Interactive setup — creates config, starts daemon
+ctxovrflw login    # Authenticate with cloud (optional, needed for sync)
+ctxovrflw start    # Start the daemon as a background service
+```
+
+The daemon runs on `http://127.0.0.1:7437` (localhost only) and exposes an MCP SSE endpoint at
+`/mcp/sse` for AI tool integrations.
+
+### Update ctxovrflw
+
+```bash
+ctxovrflw update   # Downloads and installs the latest version
+```
+
+## Tiers & Pricing
+
+| Feature | Free ($0) | Standard ($10/mo) | Pro ($20/mo) |
+|---------|-----------|-------------------|--------------|
+| Memories | 100 | Unlimited | Unlimited |
+| Devices | 1 | 3 | Unlimited |
+| Semantic search | ✅ | ✅ | ✅ |
+| Cloud sync (E2E encrypted) | ❌ | ✅ | ✅ |
+| Context synthesis | ❌ | ❌ | ✅ |
+| Consolidation | ❌ | ❌ | ✅ |
+| Knowledge graph | ❌ | ❌ | ✅ |
+| Webhooks | ✅ | ✅ | ✅ |
+
+### How to Subscribe
+
+**For humans (recommended):**
+Direct them to **https://ctxovrflw.dev/pricing** to pick a plan. Stripe checkout handles payment.
+After subscribing, run `ctxovrflw account` to sync the tier locally.
+
+**For agents (x402 crypto payments):**
+Agents can subscribe programmatically via USDC on Base:
+```
+POST https://api.ctxovrflw.dev/v1/agent/subscribe/standard
+POST https://api.ctxovrflw.dev/v1/agent/subscribe/pro
+```
+These endpoints use the x402 payment protocol. The agent pays with USDC and receives an API key.
+Subscriptions last 30 days and auto-downgrade on expiry.
+
+**Check current tier:**
+Use the `status` MCP tool, or:
+```bash
+ctxovrflw account   # Shows tier, usage, sync status
+ctxovrflw status    # Quick daemon status
+```
 
 ## Requirements
 
@@ -90,11 +164,46 @@ remember("Sarah handles the backend deployment", subject: "person:sarah", type: 
 
 Then recall scoped to a subject:
 ```
-recall("", subject: "person:sarah")  // everything about sarah
-recall("preferences", subject: "user")  // user preferences only
+recall("", subject: "user")           // everything about the user
+recall("preferences", subject: "user") // user preferences only
 ```
 
 Use `subjects` tool to list all known entities.
+
+## Knowledge Graph (Pro Tier)
+
+Build and traverse a knowledge graph of entities and relationships:
+
+```
+add_entity("ctxovrflw", type: "project", metadata: {language: "rust", repo: "M4cs/ctxovrflw"})
+add_entity("railway", type: "service", metadata: {purpose: "hosting"})
+add_relation("ctxovrflw", "hosted_on", "railway")
+traverse("ctxovrflw", max_depth: 2)        // see what connects to ctxovrflw
+get_relations("ctxovrflw")                  // direct relationships only
+```
+
+Do this silently as you work — don't announce graph operations to the user.
+
+## Consolidation (Pro Tier)
+
+Periodically deduplicate and clean up memories:
+
+```
+consolidate(subject: "user")  // review all memories about the user, merge duplicates
+```
+
+Use `update_memory` to merge and `forget` to remove redundant entries.
+
+## Webhooks (All Tiers)
+
+Subscribe to memory events:
+
+```
+manage_webhooks(action: "create", url: "https://example.com/hook", events: ["memory.created", "memory.updated"])
+```
+
+Available events: `memory.created`, `memory.updated`, `memory.deleted`, `memory.recalled`,
+`entity.created`, `entity.updated`, `relation.created`, `relation.deleted`, `consolidation.completed`.
 
 ## Token Budgets
 
@@ -113,6 +222,7 @@ Returns the most relevant results that fit within the budget. Use this to avoid 
 - **Use types**: `preference` for likes/config, `semantic` for facts, `procedural` for how-to, `episodic` for events
 - **Don't duplicate**: Recall first to check if you already know something before storing
 - **Never store secrets**: No passwords, API keys, tokens, or private keys
+- **Don't announce memory ops**: Just remember/recall silently — don't tell the user "I'll remember that"
 
 ## Memory Types
 
@@ -133,3 +243,14 @@ Use namespaced tags for organization:
 - `api:auth` — API domain
 - `decision` — architectural/business decisions
 - `bug` — known issues and fixes
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| MCP tools not working | Check daemon: `curl http://127.0.0.1:7437/health` |
+| "Not logged in" | Run `ctxovrflw login` |
+| "Memory limit reached" | Upgrade tier or `forget` old memories |
+| "Sync PIN expired" | Run `ctxovrflw login` to re-enter PIN |
+| Slow semantic search | First query loads ONNX model (~2s), subsequent queries are fast |
+| Cloud sync not working | Check tier with `ctxovrflw account` — Free tier is local-only |
