@@ -15,31 +15,14 @@ pub async fn run(cfg: &Config, query: &str, limit: usize) -> Result<()> {
         match crate::embed::Embedder::new() {
             Ok(mut embedder) => match embedder.embed(query) {
                 Ok(embedding) => {
-                    eprintln!("[debug] Query embedding generated, searching vectors...");
-                    match crate::db::search::semantic_search(&conn, &embedding, limit) {
-                        Ok(r) if !r.is_empty() => {
-                            eprintln!("[debug] Semantic search returned {} results", r.len());
-                            (r, SearchMethod::Semantic)
-                        }
-                        Ok(_) => {
-                            eprintln!("[debug] Semantic search returned 0 results, falling back to keyword");
-                            (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword)
-                        }
-                        Err(e) => {
-                            eprintln!("[debug] Semantic search failed: {e}, falling back to keyword");
-                            (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword)
-                        }
+                    match crate::db::search::hybrid_search(&conn, query, &embedding, limit) {
+                        Ok(r) if !r.is_empty() => (r, SearchMethod::Hybrid),
+                        _ => (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword),
                     }
                 }
-                Err(e) => {
-                    eprintln!("[debug] Embed failed: {e}, falling back to keyword");
-                    (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword)
-                }
+                Err(_) => (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword),
             },
-            Err(e) => {
-                eprintln!("[debug] Embedder init failed: {e}, falling back to keyword");
-                (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword)
-            }
+            Err(_) => (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword),
         }
     } else {
         (crate::db::search::keyword_search(&conn, query, limit)?, SearchMethod::Keyword)

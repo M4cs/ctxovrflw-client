@@ -277,9 +277,10 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
         match embedder.embed(&body.query) {
             Ok(embedding) => {
                 drop(embedder); // Release lock before DB query
-                let sem = db::search::semantic_search(&conn, &embedding, fetch_limit).unwrap_or_default();
-                if !sem.is_empty() {
-                    (sem, SearchMethod::Semantic)
+                // Hybrid search: combine semantic + keyword via RRF
+                let hybrid = db::search::hybrid_search(&conn, &body.query, &embedding, fetch_limit).unwrap_or_default();
+                if !hybrid.is_empty() {
+                    (hybrid, SearchMethod::Hybrid)
                 } else {
                     (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
                 }

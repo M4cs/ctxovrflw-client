@@ -670,9 +670,9 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
         match crate::embed::Embedder::new() {
             Ok(mut embedder) => match embedder.embed(query) {
                 Ok(embedding) => {
-                    let sem = db::search::semantic_search(&conn, &embedding, fetch_limit)?;
-                    if !sem.is_empty() {
-                        (sem, SearchMethod::Semantic)
+                    let hybrid = db::search::hybrid_search(&conn, query, &embedding, fetch_limit)?;
+                    if !hybrid.is_empty() {
+                        (hybrid, SearchMethod::Hybrid)
                     } else {
                         (db::search::keyword_search(&conn, query, fetch_limit)?, SearchMethod::Keyword)
                     }
