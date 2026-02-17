@@ -5,13 +5,14 @@
     "daemonUrl": {
       "label": "Daemon URL",
       "placeholder": "http://127.0.0.1:7437",
-      "help": "ctxovrflw daemon HTTP endpoint"
+      "help": "Auto-detected from config.toml. Only set to override.",
+      "advanced": true
     },
     "authToken": {
       "label": "Auth Token",
       "sensitive": true,
-      "placeholder": "from ~/.ctxovrflw/config.toml",
-      "help": "Bearer token for daemon API (auth_token in config.toml)"
+      "help": "Auto-read from ~/.ctxovrflw/config.toml. Only set to override.",
+      "advanced": true
     },
     "autoCapture": {
       "label": "Auto-Capture",
@@ -24,25 +25,22 @@
     "agentId": {
       "label": "Agent ID",
       "placeholder": "openclaw",
-      "help": "Identifier for this agent (stored with memories for attribution)"
-    },
-    "captureMaxChars": {
-      "label": "Capture Max Chars",
-      "help": "Maximum message length eligible for auto-capture",
-      "advanced": true,
-      "placeholder": "500"
+      "help": "Identifier stored with memories for attribution",
+      "advanced": true
     },
     "recallLimit": {
       "label": "Recall Limit",
-      "help": "Maximum memories to inject via auto-recall",
-      "advanced": true,
-      "placeholder": "5"
+      "help": "Max memories to inject via auto-recall",
+      "advanced": true
     },
     "recallMinScore": {
       "label": "Recall Min Score",
       "help": "Minimum similarity score for auto-recall (0.0-1.0)",
-      "advanced": true,
-      "placeholder": "0.3"
+      "advanced": true
+    },
+    "captureMaxChars": {
+      "label": "Capture Max Chars",
+      "advanced": true
     }
   },
   "configSchema": {
@@ -50,43 +48,35 @@
     "additionalProperties": false,
     "properties": {
       "daemonUrl": {
-        "type": "string",
-        "default": "http://127.0.0.1:7437"
+        "type": "string"
       },
       "authToken": {
         "type": "string"
       },
       "autoCapture": {
-        "type": "boolean",
-        "default": false
+        "type": "boolean"
       },
       "autoRecall": {
-        "type": "boolean",
-        "default": true
+        "type": "boolean"
       },
       "agentId": {
-        "type": "string",
-        "default": "openclaw"
+        "type": "string"
       },
       "captureMaxChars": {
         "type": "number",
         "minimum": 50,
-        "maximum": 10000,
-        "default": 500
+        "maximum": 10000
       },
       "recallLimit": {
         "type": "number",
         "minimum": 1,
-        "maximum": 50,
-        "default": 5
+        "maximum": 50
       },
       "recallMinScore": {
         "type": "number",
         "minimum": 0,
-        "maximum": 1,
-        "default": 0.3
+        "maximum": 1
       }
-    },
-    "required": ["authToken"]
+    }
   }
 }
