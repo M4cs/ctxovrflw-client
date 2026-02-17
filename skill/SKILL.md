@@ -10,10 +10,10 @@ metadata:
     skillKey: ctxovrflw
     requires:
       config:
-        - "plugins.entries.ctxovrflw.enabled"
+        - "plugins.entries.memory-ctxovrflw.enabled"
     install:
-      plugin: "@ctxovrflw/openclaw-plugin"
-compatibility: Requires ctxovrflw daemon running locally (MCP server on port 7437). Install the OpenClaw plugin via `openclaw plugins install @ctxovrflw/openclaw-plugin` for automatic setup, or use standalone with MCP/CLI.
+      plugin: "@ctxovrflw/memory-ctxovrflw"
+compatibility: Requires ctxovrflw daemon running locally (MCP server on port 7437). Install the OpenClaw plugin via `openclaw plugins install @ctxovrflw/memory-ctxovrflw` for automatic setup, or use standalone with MCP/CLI.
 ---
 
 # ctxovrflw — Shared Memory

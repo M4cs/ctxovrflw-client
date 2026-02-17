@@ -318,7 +318,7 @@ function escapeForPrompt(text: string): string {
 // ============================================================================
 
 const ctxovrflwPlugin = {
-  id: "ctxovrflw",
+  id: "memory-ctxovrflw",
   name: "Memory (ctxovrflw)",
   description:
     "ctxovrflw-backed memory — local-first semantic search, knowledge graph, cross-tool recall. Zero config.",
@@ -941,7 +941,7 @@ const ctxovrflwPlugin = {
     // ========================================================================
 
     api.registerService({
-      id: "ctxovrflw",
+      id: "memory-ctxovrflw",
       start: async () => {
         const c = await getClient();
         if (c) {
