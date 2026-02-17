@@ -217,7 +217,7 @@ function escapeForPrompt(text: string): string {
 // ============================================================================
 
 const SETUP_MSG =
-  "ctxovrflw is not set up. Install: `curl -fsSL https://ctxovrflw.dev/install.sh | bash` then run `ctxovrflw init && ctxovrflw start`";
+  "ctxovrflw daemon is not running. Install: curl -fsSL https://ctxovrflw.dev/install.sh | bash && ctxovrflw init && ctxovrflw start";
 
 const ctxovrflwPlugin = {
   id: "memory-ctxovrflw",
@@ -256,7 +256,7 @@ const ctxovrflwPlugin = {
 
         if (!isInstalled() || !isConfigured()) {
           api.logger.warn(
-            "memory-ctxovrflw: ctxovrflw not installed or not initialized. Run: ctxovrflw init && ctxovrflw start",
+            `memory-ctxovrflw: ${SETUP_MSG}`,
           );
           setupFailed = true;
           return null;
@@ -789,9 +789,7 @@ const ctxovrflwPlugin = {
       start: async () => {
         const c = getClient();
         if (!c) {
-          api.logger.warn(
-            "memory-ctxovrflw: ctxovrflw not available. Install: curl -fsSL https://ctxovrflw.dev/install.sh | bash && ctxovrflw init && ctxovrflw start",
-          );
+          api.logger.warn(`memory-ctxovrflw: ${SETUP_MSG}`);
           return;
         }
 
@@ -807,7 +805,7 @@ const ctxovrflwPlugin = {
           }
         } else {
           api.logger.warn(
-            `memory-ctxovrflw: daemon unreachable at ${cfg.daemonUrl}. Start it: ctxovrflw start`,
+            `memory-ctxovrflw: daemon unreachable at ${cfg.daemonUrl}. ${SETUP_MSG}`,
           );
         }
       },
