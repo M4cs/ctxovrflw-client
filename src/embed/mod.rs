@@ -155,11 +155,6 @@ impl Embedder {
             .iter()
             .map(|&m| m as i64)
             .collect();
-        let token_type_ids: Vec<i64> = encoding
-            .get_type_ids()
-            .iter()
-            .map(|&t| t as i64)
-            .collect();
 
         let seq_len = input_ids.len();
         let shape: Vec<usize> = vec![1, seq_len];
@@ -168,12 +163,25 @@ impl Embedder {
             ort::value::TensorRef::from_array_view((&shape as &[usize], &*input_ids))?;
         let mask_tensor =
             ort::value::TensorRef::from_array_view((&shape as &[usize], &*attention_mask))?;
-        let type_tensor =
-            ort::value::TensorRef::from_array_view((&shape as &[usize], &*token_type_ids))?;
 
-        let outputs =
+        // Some models (BERT-based) accept 3 inputs: input_ids, attention_mask, token_type_ids
+        // Others (XLM-RoBERTa, GTE) only accept 2: input_ids, attention_mask
+        // Detect at runtime from the ONNX session metadata.
+        let num_inputs = self.session.inputs().len();
+        let outputs = if num_inputs >= 3 {
+            let token_type_ids: Vec<i64> = encoding
+                .get_type_ids()
+                .iter()
+                .map(|&t| t as i64)
+                .collect();
+            let type_tensor =
+                ort::value::TensorRef::from_array_view((&shape as &[usize], &*token_type_ids))?;
             self.session
-                .run(ort::inputs![ids_tensor, mask_tensor, type_tensor])?;
+                .run(ort::inputs![ids_tensor, mask_tensor, type_tensor])?
+        } else {
+            self.session
+                .run(ort::inputs![ids_tensor, mask_tensor])?
+        };
 
         let (_output_shape, output_data) = outputs[0].try_extract_tensor::<f32>()?;
 
