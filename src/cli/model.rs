@@ -147,9 +147,12 @@ pub async fn switch(model_id: &str) -> Result<()> {
     cfg.embedding_dim = model_info.dim; // This will be recalculated on load, but set it for consistency
     cfg.save()?;
     
-    // Step 5: Open new database (creates tables with new dimension)
+    // Step 5: Set new embedding dimension BEFORE opening DB
+    // (db::open creates memory_vectors with embedding_dim(), which defaults to old value)
+    embed::set_embedding_dim(model_info.dim);
+    
     println!("🏗️  Creating new database...");
-    let _conn = db::open()?; // This creates tables with new embedding dimension
+    let _conn = db::open()?; // Creates tables with correct new dimension
     
     // Step 6: Import all data
     println!("📤 Importing data...");
