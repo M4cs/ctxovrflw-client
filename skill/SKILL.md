@@ -387,6 +387,7 @@ Opens an interactive terminal UI where you can browse, search, view details, del
 and see knowledge graph connections (`g` key) for any memory.
 
 **TUI keybindings:**
+
 - `j`/`k` or arrows — navigate
 - `/` — search
 - `Enter` — view details
@@ -418,6 +419,7 @@ ctxovrflw model switch bge-base-en-v1.5
 ```
 
 Available models:
+
 - `all-MiniLM-L6-v2` — 384d, ~23MB. Fast, lightweight, good for English. (Default)
 - `bge-small-en-v1.5` — 384d, ~33MB. Better quality, same speed. English only.
 - `bge-base-en-v1.5` — 768d, ~110MB. Significant quality bump.
@@ -605,11 +607,11 @@ ctxovrflw forget <duplicate-id>
 
 ### When to Use CLI/API vs MCP
 
-| Scenario | Use |
-|---|---|
-| AI tool with native MCP support (Cursor, Claude Code, Cline) | MCP tools |
-| AI tool without MCP support | HTTP API |
-| Scripts and automation | CLI commands |
-| Debugging or manual memory management | CLI or TUI (`ctxovrflw memories`) |
-| OpenClaw agents | CLI via `exec`, or MCP via `mcporter` |
-| CI/CD pipelines | CLI commands with `--yes` flag |
+| Scenario                                                     | Use                                   |
+| ------------------------------------------------------------ | ------------------------------------- |
+| AI tool with native MCP support (Cursor, Claude Code, Cline) | MCP tools                             |
+| AI tool without MCP support                                  | HTTP API                              |
+| Scripts and automation                                       | CLI commands                          |
+| Debugging or manual memory management                        | CLI or TUI (`ctxovrflw memories`)     |
+| OpenClaw agents                                              | CLI via `exec`, or MCP via `mcporter` |
+| CI/CD pipelines                                              | CLI commands with `--yes` flag        |
