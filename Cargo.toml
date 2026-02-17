@@ -1,6 +1,6 @@
 [package]
 name = "ctxovrflw"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2024"
 description = "Universal AI context layer. One memory, every tool."
 license = "MIT"
@@ -86,6 +86,7 @@ tempfile = "3"
 flate2 = "1.1.9"
 tar = "0.4.44"
 ed25519-dalek = { version = "2.2.0", features = ["serde"] }
+sha2 = "0.10"
 
 
 [dev-dependencies]

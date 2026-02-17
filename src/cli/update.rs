@@ -1,4 +1,5 @@
 use anyhow::Result;
+use sha2::{Sha256, Digest};
 
 use crate::config::Config;
 
@@ -26,27 +27,82 @@ pub async fn check_latest(cfg: &Config) -> Result<Option<String>> {
     Ok(Some(latest.version))
 }
 
-/// Compare current version against latest. Returns true if an update is available.
+/// Compare semver versions. Supports pre-release (e.g., 0.5.0-rc.1).
+/// Pre-release versions are OLDER than their release counterpart (0.5.0-rc.1 < 0.5.0).
 fn is_newer(latest: &str) -> bool {
     let latest_clean = latest.trim_start_matches('v');
     let current_clean = CURRENT_VERSION.trim_start_matches('v');
 
-    // Simple semver comparison
-    let parse = |s: &str| -> (u32, u32, u32) {
-        let parts: Vec<u32> = s.split('.').filter_map(|p| p.parse().ok()).collect();
-        (
-            parts.first().copied().unwrap_or(0),
-            parts.get(1).copied().unwrap_or(0),
-            parts.get(2).copied().unwrap_or(0),
-        )
+    match (parse_semver(latest_clean), parse_semver(current_clean)) {
+        (Some(l), Some(c)) => l > c,
+        _ => false, // Can't parse, don't update
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SemVer {
+    major: u32,
+    minor: u32,
+    patch: u32,
+    pre: Option<String>,
+}
+
+impl Ord for SemVer {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match self.major.cmp(&other.major)
+            .then(self.minor.cmp(&other.minor))
+            .then(self.patch.cmp(&other.patch))
+        {
+            std::cmp::Ordering::Equal => {
+                match (&self.pre, &other.pre) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (Some(a), Some(b)) => a.cmp(b),
+                }
+            }
+            ord => ord,
+        }
+    }
+}
+
+impl PartialOrd for SemVer {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+fn parse_semver(s: &str) -> Option<SemVer> {
+    let (version_part, pre) = if let Some((v, p)) = s.split_once('-') {
+        (v, Some(p.to_string()))
+    } else {
+        (s, None)
     };
 
-    parse(latest_clean) > parse(current_clean)
+    let parts: Vec<u32> = version_part.split('.').filter_map(|p| p.parse().ok()).collect();
+    if parts.len() < 3 { return None; }
+
+    Some(SemVer {
+        major: parts[0],
+        minor: parts[1],
+        patch: parts[2],
+        pre,
+    })
 }
 
 /// Just print version + check for updates.
 pub async fn version() -> Result<()> {
     println!("ctxovrflw v{CURRENT_VERSION}");
+
+    // Show binary hash
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Ok(bytes) = std::fs::read(&exe_path) {
+            let mut hasher = Sha256::new();
+            hasher.update(&bytes);
+            let hash = format!("{:x}", hasher.finalize());
+            println!("Binary SHA256: {}...", &hash[..16]);
+        }
+    }
 
     let cfg = Config::load().unwrap_or_default();
     match check_latest(&cfg).await {
@@ -111,8 +167,55 @@ pub async fn run(check_only: bool) -> Result<()> {
         anyhow::bail!("Download failed ({status}): {body}");
     }
 
+    // Capture hash header before consuming body
+    let expected_hash = resp.headers()
+        .get("x-sha256")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
     let bytes = resp.bytes().await?;
     println!("Downloaded {} bytes", bytes.len());
+
+    // Verify SHA256
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let actual_hash = format!("{:x}", hasher.finalize());
+
+    if let Some(expected) = &expected_hash {
+        if actual_hash != *expected {
+            anyhow::bail!(
+                "SHA256 mismatch! Expected: {}, Got: {}. Download may be corrupted or tampered with.",
+                expected, actual_hash
+            );
+        }
+        println!("✓ SHA256 verified: {}", &actual_hash[..16]);
+    } else {
+        // Fallback: try to fetch checksums from API
+        let checksums_url = format!("{}/v1/releases/{}/checksums", cfg.cloud_url, latest);
+        if let Ok(checksums_resp) = client.get(&checksums_url)
+            .timeout(std::time::Duration::from_secs(5))
+            .send().await
+        {
+            if checksums_resp.status().is_success() {
+                if let Ok(checksums_text) = checksums_resp.text().await {
+                    let (dl_os, dl_arch) = detect_platform();
+                    let artifact = format!("ctxovrflw-{}-{}", dl_os, dl_arch);
+                    let expected_line = checksums_text.lines()
+                        .find(|l| l.contains(&artifact));
+                    if let Some(line) = expected_line {
+                        let expected = line.split_whitespace().next().unwrap_or("");
+                        if actual_hash != expected {
+                            anyhow::bail!(
+                                "SHA256 mismatch! Expected: {}, Got: {}",
+                                expected, actual_hash
+                            );
+                        }
+                        println!("✓ SHA256 verified: {}", &actual_hash[..16]);
+                    }
+                }
+            }
+        }
+    }
 
     // Extract tarball to temp dir
     let tmp_dir = tempfile::tempdir()?;
