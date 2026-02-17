@@ -127,7 +127,7 @@ SCENARIOS = [
         category="Preference Evolution",
         question="How has our approach to database encryption changed over the project lifetime?",
         ground_truth="Started with no encryption, then added optional encryption, then made E2E mandatory after security audit. Also switched from email-based salt to server-side salt.",
-        keywords=["optional", "mandatory", "email", "server-side salt", "security audit"],
+        keywords=["optional", "mandatory", "PIN", "plaintext", "security audit"],
         memories=[
             {"content": "Early ctxovrflw (v0.1.x): No encryption for cloud sync. Memories stored in plaintext on server. Quick prototype phase.", "type": "semantic", "tags": ["history", "encryption", "evolution"], "subject": "ctxovrflw"},
             {"content": "v0.2.x: Added optional E2E encryption. Users could set a PIN to encrypt before sync. Some users skipped it for convenience.", "type": "semantic", "tags": ["history", "encryption", "evolution"], "subject": "ctxovrflw"},
@@ -140,7 +140,7 @@ SCENARIOS = [
         category="Preference Evolution",
         question="What's Max's current stance on using AI for marketing, and how has it changed?",
         ground_truth="Initially skeptical about AI marketing, then tried Moltbook engagement and found genuine community interaction works. Now believes in 'community member first, not advertiser' approach.",
-        keywords=["skeptical", "Moltbook", "genuine", "community member", "advertiser"],
+        keywords=["skeptical", "Moltbook", "genuine", "community", "advertiser"],
         memories=[
             {"content": "January 2026: Max initially skeptical about using AI for marketing. Worried it would come across as spammy and inauthentic.", "type": "semantic", "tags": ["preference", "marketing", "evolution"], "subject": "Max"},
             {"content": "February 2026: Max tried Moltbook AI social network for ctxovrflw outreach. Set up automated engagement with strict rules: max 2-3 comments per run, genuine insights only, community member first not advertiser.", "type": "semantic", "tags": ["preference", "marketing", "evolution"], "subject": "Max"},
@@ -157,7 +157,7 @@ SCENARIOS = [
         category="Multi-hop",
         question="Why did our benchmark results improve dramatically between the first and second run?",
         ground_truth="First run had SSE connection failures caused by blocking_lock panic in sync, which killed tokio workers. Fixing the mutex (std::sync instead of tokio::sync) resolved SSE drops, so MCP recall worked reliably.",
-        keywords=["blocking_lock", "SSE", "tokio", "std::sync", "MCP", "recall"],
+        keywords=["mutex", "tokio", "std::sync", "MCP", "recall", "69%"],
         memories=[
             {"content": "First benchmark run (Feb 16 morning): ctxovrflw mode scored only 69% coverage. 5 out of 11 scenarios showed 'service unreachable' when calling MCP recall.", "type": "semantic", "tags": ["benchmark", "results", "failure"], "subject": "benchmarks"},
             {"content": "Root cause found: tokio::sync::Mutex::blocking_lock() in sync/mod.rs panicked inside async context, crashing tokio worker threads that were serving SSE connections.", "type": "semantic", "tags": ["bug", "root-cause", "mutex"], "subject": "ctxovrflw"},
@@ -169,7 +169,7 @@ SCENARIOS = [
         category="Multi-hop",
         question="What's the connection between Jake's contribution and our benchmark improvement?",
         ground_truth="Jake fixed ONNX ARM64 CI, which enabled the embedder to work. The embedder singleton used tokio::Mutex which caused the panic. Fixing to std::sync::Mutex (still using Jake's ONNX setup) fixed benchmarks.",
-        keywords=["Jake", "ONNX", "ARM64", "embedder", "singleton", "Mutex"],
+        keywords=["Jake", "ONNX", "ARM64", "embedder", "Mutex"],
         memories=[
             {"content": "Jake contributed the ONNX runtime CI fix for ARM64, enabling cross-platform ONNX builds.", "type": "semantic", "tags": ["contribution", "onnx", "ci"], "subject": "Jake"},
             {"content": "ONNX embedder is loaded as a global singleton (Arc<Mutex<Embedder>>) at daemon startup, shared across HTTP, MCP, and sync tasks.", "type": "semantic", "tags": ["architecture", "onnx", "singleton"], "subject": "ctxovrflw"},
@@ -199,7 +199,7 @@ SCENARIOS = [
         category="Long-term",
         question="Why was ctxovrflw created? What was the original motivation?",
         ground_truth="Max was frustrated that AI agents forgot everything between sessions. Context windows are expensive and ephemeral. Wanted persistent, private, cross-agent memory.",
-        keywords=["forgot", "sessions", "context window", "persistent", "private", "cross-agent"],
+        keywords=["started from zero", "context window", "persistent", "private", "MCP"],
         memories=[
             {"content": "ctxovrflw origin story: Max was frustrated that every AI coding session started from zero. Claude Code, Cursor, Copilot — none remembered decisions from yesterday. Context windows are expensive and ephemeral. He wanted persistent memory that's private (local-first), works across any AI tool (MCP), and syncs across devices.", "type": "semantic", "tags": ["origin", "motivation", "founding"], "subject": "ctxovrflw"},
         ],
@@ -209,7 +209,7 @@ SCENARIOS = [
         category="Long-term",
         question="Why did we choose Rust for the daemon instead of Python or Go?",
         ground_truth="Rust for performance (sub-ms recall), single binary distribution, memory safety without GC pauses, and SQLite FFI is straightforward.",
-        keywords=["performance", "single binary", "memory safety", "SQLite", "GC"],
+        keywords=["performance", "binary", "memory safety", "SQLite", "GC"],
         memories=[
             {"content": "Architecture decision: Rust chosen for ctxovrflw daemon. Reasons: sub-millisecond recall latency (no GC pauses), compiles to single static binary (easy distribution), memory safety guarantees for a long-running daemon, excellent SQLite FFI via rusqlite, and strong async ecosystem (tokio) for HTTP/SSE server.", "type": "semantic", "tags": ["decision", "architecture", "rust"], "subject": "ctxovrflw"},
         ],
@@ -219,7 +219,7 @@ SCENARIOS = [
         category="Long-term",
         question="How did ctxovrflw get its name?",
         ground_truth="Play on 'context overflow' — AI context windows overflow and forget. ctxovrflw catches what overflows. Also a nod to stackoverflow for developers.",
-        keywords=["context overflow", "forget", "catches", "stackoverflow"],
+        keywords=["context overflow", "overflow", "catches", "stackoverflow"],
         memories=[
             {"content": "Name origin: ctxovrflw = 'context overflow'. AI context windows have limited space — when they overflow, knowledge is lost. ctxovrflw catches what overflows and persists it. Also a deliberate nod to stackoverflow — a tool developers already associate with finding answers. The abbreviated spelling (no vowels) follows Unix naming conventions.", "type": "semantic", "tags": ["name", "branding", "origin"], "subject": "ctxovrflw"},
         ],
@@ -234,7 +234,7 @@ SCENARIOS = [
         category="Social",
         question="How did the team react to the security audit findings?",
         ground_truth="Max was alarmed by the 0.0.0.0 binding (called it 'holy shit moment'). Prioritized it immediately as P0. Was relieved the fix was simple (one-line change to 127.0.0.1).",
-        keywords=["alarmed", "0.0.0.0", "P0", "prioritized", "one-line", "127.0.0.1"],
+        keywords=["holy shit", "0.0.0.0", "P0", "127.0.0.1"],
         memories=[
             {"content": "Max's reaction to security audit: 'holy shit moment' when he saw the daemon was binding 0.0.0.0 — anyone on the network could access memories. Immediately classified as P0, dropped everything else. Was relieved the fix was just changing one line to 127.0.0.1 in the HTTP server config.", "type": "semantic", "tags": ["reaction", "security", "sentiment"], "subject": "Max"},
         ],
@@ -244,7 +244,7 @@ SCENARIOS = [
         category="Social",
         question="What technical issue caused the most frustration during development?",
         ground_truth="The cross-device PIN verification failure was the most frustrating. Took 3 days to find because email salt mismatch was subtle — worked on same device, broke across devices.",
-        keywords=["PIN", "cross-device", "3 days", "email salt", "subtle"],
+        keywords=["PIN", "cross-device", "3 days", "email", "PBKDF2"],
         memories=[
             {"content": "Most frustrating bug: cross-device PIN verification. Took 3 days to diagnose. derive_key() used email as PBKDF2 salt, but email casing or encoding differed slightly between devices. Worked perfectly on the same device (same email string), only broke when syncing to a second device. Subtle and maddening. Fixed by moving to server-side random salt in v0.4.2.", "type": "semantic", "tags": ["frustration", "bug", "pin", "debugging"], "subject": "ctxovrflw"},
         ],
@@ -286,7 +286,7 @@ SCENARIOS = [
         category="Spatial",
         question="Describe the full deployment infrastructure — where does each component run?",
         ground_truth="Daemon runs locally on user machines. Cloud API on Railway (Hono/Bun). Website on Vercel (Vite/React). CI on GitHub Actions (public repo). Database is PostgreSQL on Railway.",
-        keywords=["Railway", "Vercel", "GitHub Actions", "PostgreSQL", "locally"],
+        keywords=["Railway", "GitHub Actions", "PostgreSQL", "local", "systemd"],
         memories=[
             {"content": "ctxovrflw infrastructure map: Daemon — runs on user's local machine (systemd service on Linux, launchd on Mac). Cloud API — Railway (Hono/Bun/TypeScript, PostgreSQL). Website (ctxovrflw.dev) — Vercel (Vite/React). CI — GitHub Actions on public repo M4cs/ctxovrflw-client (5 platform builds). DNS — Cloudflare.", "type": "semantic", "tags": ["infrastructure", "deployment", "architecture"], "subject": "ctxovrflw"},
         ],
@@ -310,7 +310,7 @@ SCENARIOS = [
         category="Personal",
         question="When is Max usually available and when should I avoid messaging?",
         ground_truth="Max is in EST timezone (Boston). Usually active 9am-midnight. Avoid 1am-8am EST. Prefers async communication.",
-        keywords=["EST", "Boston", "9am", "midnight", "async"],
+        keywords=["EST", "Boston", "9 AM", "midnight", "async"],
         memories=[
             {"content": "Max's availability: EST timezone (Boston). Typically active 9am–midnight EST. Deep work blocks usually morning (10am-1pm). Avoid messaging 1am–8am EST unless urgent. Prefers async communication — don't expect instant replies during focus time.", "type": "preference", "tags": ["schedule", "availability", "timezone"], "subject": "Max"},
         ],
