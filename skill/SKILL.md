@@ -513,6 +513,96 @@ to track which agent stored each memory. This helps with cross-agent recall and 
 The `agent_id` is a free-form string — use something identifiable like `"cursor"`, `"claude-code"`,
 `"cline"`, or your agent's name.
 
+### Knowledge Graph (HTTP API)
+
+These have no CLI equivalent — use the HTTP API directly or MCP tools.
+
+```bash
+TOKEN="<auth_token from config.toml>"
+BASE="http://127.0.0.1:7437"
+
+# List unique subjects across all memories
+curl -s "$BASE/v1/subjects" -H "Authorization: Bearer $TOKEN"
+
+# Add an entity
+curl -s -X POST "$BASE/v1/entities" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"name": "ctxovrflw", "entity_type": "project", "metadata": {}}'
+
+# Get entity details
+curl -s "$BASE/v1/entities/<entity-id>" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Delete an entity
+curl -s -X DELETE "$BASE/v1/entities/<entity-id>" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Add a relation between entities
+curl -s -X POST "$BASE/v1/relations" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "source_entity_id": "<entity-id>",
+    "target_entity_id": "<entity-id>",
+    "relation_type": "depends_on"
+  }'
+
+# Get all relations for an entity
+curl -s "$BASE/v1/relations/<entity-id>" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Delete a relation
+curl -s -X DELETE "$BASE/v1/relations/<relation-id>/delete" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Traverse the graph from an entity (returns connected entities + relations)
+curl -s "$BASE/v1/graph/traverse/<entity-id>" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Note:** Knowledge graph features require Pro tier. The `graph build` and `graph stats` CLI
+commands are available for bulk operations.
+
+### Webhooks (HTTP API)
+
+Webhooks let you subscribe to memory events (create, update, delete) and route them to
+external services (Slack, Zapier, n8n, etc.). Pro tier only.
+
+```bash
+# List webhooks
+curl -s "$BASE/v1/webhooks" -H "Authorization: Bearer $TOKEN"
+
+# Create a webhook
+curl -s -X POST "$BASE/v1/webhooks" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "url": "https://hooks.slack.com/services/...",
+    "events": ["memory.created", "memory.updated", "memory.deleted"],
+    "secret": "optional-hmac-secret"
+  }'
+
+# Delete a webhook
+curl -s -X DELETE "$BASE/v1/webhooks/<webhook-id>" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+### Consolidate (MCP Only)
+
+The `consolidate` tool finds duplicate/related memories for a subject so you can merge them.
+There's no CLI or HTTP equivalent — use it via MCP or manually:
+
+```bash
+# Manual consolidation workflow:
+# 1. Search for a subject's memories
+ctxovrflw recall "project:myapp" --limit 20
+
+# 2. Review the results for duplicates
+# 3. Delete redundant ones
+ctxovrflw forget <duplicate-id>
+```
+
 ### When to Use CLI/API vs MCP
 
 | Scenario | Use |
