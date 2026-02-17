@@ -989,23 +989,25 @@ You have persistent, cross-agent memory via ctxovrflw. Use it automatically — 
 
 ### How to call ctxovrflw from OpenClaw
 
-OpenClaw doesn't have native MCP client support, so use `mcporter` via `exec`:
+**If the ctxovrflw plugin is installed** (`openclaw plugins install @ctxovrflw/memory-ctxovrflw`),
+memory tools work natively — use `memory_store`, `memory_search`, `memory_forget`, and
+`memory_status` directly as tool calls. The plugin handles auto-recall and auto-capture too.
+
+**Fallback: mcporter** (for knowledge graph and advanced MCP tools not covered by the plugin):
 
 ```bash
-# Remember
-mcporter call ctxovrflw.remember content="fact to store" type=semantic tags='["tag1","tag2"]' subject="entity"
-
-# Recall
-mcporter call ctxovrflw.recall query="search query" limit=5
-
-# Forget (always dry_run first)
-mcporter call ctxovrflw.forget id="uuid" dry_run=true
-
-# Knowledge graph
+# Knowledge graph (Pro)
 mcporter call ctxovrflw.add_entity name="thing" type="project"
 mcporter call ctxovrflw.add_relation source="A" source_type="project" target="B" target_type="service" relation="depends_on"
 mcporter call ctxovrflw.traverse entity="thing" max_depth=2
 mcporter call ctxovrflw.get_relations entity="thing"
+mcporter call ctxovrflw.search_entities query="name" type="project"
+
+# Consolidation (Pro)
+mcporter call ctxovrflw.consolidate subject="user"
+
+# Webhooks
+mcporter call ctxovrflw.manage_webhooks action="list"
 
 # Status
 mcporter call ctxovrflw.status
@@ -1070,7 +1072,7 @@ Lookups are local, fast, and free (local SQLite + ONNX, no API calls). When in d
 
 ### Learn from corrections
 When the user corrects you, ALWAYS store the correction:
-- `mcporter call ctxovrflw.remember content="User corrected: X not Y because Z" type=preference tags='["correction"]' subject=user`
+- Use `memory_store` (if plugin installed) or `mcporter call ctxovrflw.remember content="User corrected: X not Y because Z" type=preference tags='["correction"]' subject=user`
 - Tag corrections with `correction` so they surface on future recalls
 - If the user says "I already told you" — recall the topic immediately, store the correction, don't repeat the mistake
 
