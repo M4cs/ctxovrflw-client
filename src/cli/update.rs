@@ -148,8 +148,14 @@ pub async fn run(check_only: bool) -> Result<()> {
         }
     }
 
-    // Replace current binary
-    let current_exe = std::env::current_exe()?;
+    // Replace binary at canonical location (~/.ctxovrflw/bin/ctxovrflw)
+    // Falls back to current exe location if canonical doesn't exist
+    let canonical_bin = Config::data_dir()?.join("bin").join("ctxovrflw");
+    let current_exe = if canonical_bin.exists() {
+        canonical_bin
+    } else {
+        std::env::current_exe()?
+    };
     let backup = current_exe.with_extension("old");
 
     // Backup current binary
