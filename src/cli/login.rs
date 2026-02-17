@@ -322,6 +322,7 @@ async fn email_password_flow(client: &reqwest::Client, cloud_url: &str) -> Resul
 struct PinVerifierResponse {
     has_pin: bool,
     key_salt: Option<String>,
+    pin_verifier: Option<String>,
 }
 
 /// Response from POST /v1/auth/setup-pin or /v1/auth/verify-pin
@@ -352,7 +353,7 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
     let account_pin: PinVerifierResponse = if resp.status().is_success() {
         resp.json().await?
     } else {
-        PinVerifierResponse { has_pin: false, key_salt: None }
+        PinVerifierResponse { has_pin: false, key_salt: None, pin_verifier: None }
     };
 
     if !account_pin.has_pin {
@@ -427,33 +428,15 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
         std::io::stdin().read_line(&mut pin)?;
         let pin = pin.trim().to_string();
 
-        // Get salt and stored verifier from server
-        let verify_resp = client
-            .get(format!("{}/v1/auth/pin-verifier", cfg.cloud_url))
-            .header("Authorization", format!("Bearer {api_key}"))
-            .send()
-            .await?;
+        // We already have the salt and verifier from the initial GET request
+        let key_salt = account_pin.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
+        let stored_verifier = account_pin.pin_verifier.ok_or_else(|| anyhow::anyhow!("Server didn't return verifier"))?;
 
-        if !verify_resp.status().is_success() {
-            anyhow::bail!("Failed to fetch PIN verifier from server");
-        }
-
-        let vdata: PinVerifierResponse = verify_resp.json().await?;
-        let key_salt = vdata.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
-
-        // Derive key CLIENT-SIDE — PIN never sent to server
+        // Derive key CLIENT-SIDE — PIN never leaves this device
         let key = crypto::derive_key(&pin, &key_salt);
 
-        // Create our own verifier and compare with server's stored one
-        // We verify by checking that our derived key can decrypt the stored verifier
-        let stored_verifier_resp = client
-            .post(format!("{}/v1/auth/verify-pin", cfg.cloud_url))
-            .header("Authorization", format!("Bearer {api_key}"))
-            .json(&serde_json::json!({ "pin_verifier": crypto::create_pin_verifier(&key)? }))
-            .send()
-            .await?;
-
-        if !stored_verifier_resp.status().is_success() {
+        // Verify by decrypting the stored verifier locally (true zero-knowledge)
+        if !crypto::verify_pin(&key, &stored_verifier) {
             // Clear auth on wrong PIN
             let mut bad_cfg = Config::load()?;
             bad_cfg.api_key = None;
