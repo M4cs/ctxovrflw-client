@@ -21,7 +21,7 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
 
       - name: Verify tag matches package version
-        working-directory: openclaw-plugin
+        working-directory: ctxovrflw
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
           TAG_VERSION="${GITHUB_REF_NAME#plugin-v}"
@@ -32,5 +32,5 @@ jobs:
           echo "✅ Publishing v$PKG_VERSION"
 
       - name: Publish to npm
-        working-directory: openclaw-plugin
+        working-directory: ctxovrflw
         run: npm publish --access public
