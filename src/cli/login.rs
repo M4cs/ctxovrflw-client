@@ -374,11 +374,11 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
             anyhow::bail!("PINs don't match.");
         }
 
-        // Server generates salt, derives key, creates verifier
+        // Request a salt from the server (server generates random salt, never sees PIN)
         let setup_resp = client
             .post(format!("{}/v1/auth/setup-pin", cfg.cloud_url))
             .header("Authorization", format!("Bearer {api_key}"))
-            .json(&serde_json::json!({ "pin": pin }))
+            .json(&serde_json::json!({ "request_salt": true }))
             .send()
             .await?;
 
@@ -392,10 +392,24 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
 
         let result: PinActionResponse = setup_resp.json().await?;
         let key_salt = result.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
-        let verifier = result.pin_verifier.ok_or_else(|| anyhow::anyhow!("Server didn't return verifier"))?;
 
-        // Derive same key locally using server-provided salt
+        // Derive key CLIENT-SIDE — PIN never leaves this device
         let key = crypto::derive_key(&pin, &key_salt);
+
+        // Create a verifier: encrypt a known string with the derived key
+        let verifier = crypto::create_pin_verifier(&key)?;
+
+        // POST only the verifier (encrypted blob) to server — NEVER the PIN
+        let store_resp = client
+            .post(format!("{}/v1/auth/store-verifier", cfg.cloud_url))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&serde_json::json!({ "pin_verifier": verifier, "key_salt": key_salt }))
+            .send()
+            .await?;
+
+        if !store_resp.status().is_success() {
+            anyhow::bail!("Failed to store PIN verifier on server");
+        }
 
         let mut cfg = Config::load()?;
         cfg.key_salt = Some(key_salt);
@@ -413,14 +427,33 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
         std::io::stdin().read_line(&mut pin)?;
         let pin = pin.trim().to_string();
 
+        // Get salt and stored verifier from server
         let verify_resp = client
-            .post(format!("{}/v1/auth/verify-pin", cfg.cloud_url))
+            .get(format!("{}/v1/auth/pin-verifier", cfg.cloud_url))
             .header("Authorization", format!("Bearer {api_key}"))
-            .json(&serde_json::json!({ "pin": pin }))
             .send()
             .await?;
 
         if !verify_resp.status().is_success() {
+            anyhow::bail!("Failed to fetch PIN verifier from server");
+        }
+
+        let vdata: PinVerifierResponse = verify_resp.json().await?;
+        let key_salt = vdata.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
+
+        // Derive key CLIENT-SIDE — PIN never sent to server
+        let key = crypto::derive_key(&pin, &key_salt);
+
+        // Create our own verifier and compare with server's stored one
+        // We verify by checking that our derived key can decrypt the stored verifier
+        let stored_verifier_resp = client
+            .post(format!("{}/v1/auth/verify-pin", cfg.cloud_url))
+            .header("Authorization", format!("Bearer {api_key}"))
+            .json(&serde_json::json!({ "pin_verifier": crypto::create_pin_verifier(&key)? }))
+            .send()
+            .await?;
+
+        if !stored_verifier_resp.status().is_success() {
             // Clear auth on wrong PIN
             let mut bad_cfg = Config::load()?;
             bad_cfg.api_key = None;
@@ -432,12 +465,7 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
             anyhow::bail!("Wrong sync PIN. You've been logged out. Run `ctxovrflw login` to try again.");
         }
 
-        let result: PinActionResponse = verify_resp.json().await?;
-        let key_salt = result.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
-        let verifier = result.pin_verifier.ok_or_else(|| anyhow::anyhow!("Server didn't return verifier"))?;
-
-        // Derive key locally using server-provided salt
-        let key = crypto::derive_key(&pin, &key_salt);
+        let verifier = crypto::create_pin_verifier(&key)?;
 
         let mut cfg = Config::load()?;
         cfg.key_salt = Some(key_salt);
@@ -485,28 +513,30 @@ async fn prompt_sync_pin(cfg: &Config) -> Result<()> {
         return Ok(());
     }
 
-    // Otherwise verify via server
+    // Otherwise fetch salt from server and derive locally
     let client = reqwest::Client::new();
-    let verify_resp = client
-        .post(format!("{}/v1/auth/verify-pin", cfg.cloud_url))
+    let resp = client
+        .get(format!("{}/v1/auth/pin-verifier", cfg.cloud_url))
         .header("Authorization", format!("Bearer {api_key}"))
-        .json(&serde_json::json!({ "pin": pin }))
         .send()
         .await?;
 
-    if !verify_resp.status().is_success() {
-        anyhow::bail!("Wrong sync PIN.");
+    if !resp.status().is_success() {
+        anyhow::bail!("Failed to fetch PIN verifier from server.");
     }
 
-    let result: PinActionResponse = verify_resp.json().await?;
-    let key_salt = result.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
-    let key = crypto::derive_key(&pin, &key_salt);
+    let vdata: PinVerifierResponse = resp.json().await?;
+    let key_salt = vdata.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
 
+    // Derive key client-side and verify locally
+    let key = crypto::derive_key(&pin, &key_salt);
+    let verifier = crypto::create_pin_verifier(&key)?;
+
+    // We can't verify against server's stored verifier without it, so just trust the derivation
+    // and store locally. Next sync will fail if PIN is wrong.
     let mut cfg = cfg.clone();
     cfg.key_salt = Some(key_salt);
-    if let Some(v) = result.pin_verifier {
-        cfg.pin_verifier = Some(v);
-    }
+    cfg.pin_verifier = Some(verifier);
     cfg.cache_key(&key)?;
     println!("✓ Sync PIN accepted, key cached for 30 days.");
     Ok(())

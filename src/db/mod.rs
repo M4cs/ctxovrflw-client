@@ -7,18 +7,28 @@ pub mod webhooks;
 
 use anyhow::Result;
 use rusqlite::Connection;
+use std::sync::Once;
 
 use crate::config::Config;
+
+/// Register sqlite-vec extension exactly once.
+static SQLITE_VEC_INIT: Once = Once::new();
+
+fn init_sqlite_vec() {
+    SQLITE_VEC_INIT.call_once(|| {
+        unsafe {
+            rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
+                sqlite_vec::sqlite3_vec_init as *const (),
+            )));
+        }
+    });
+}
 
 pub fn open() -> Result<Connection> {
     let path = Config::db_path()?;
 
-    // Register sqlite-vec as auto extension BEFORE opening connection
-    unsafe {
-        rusqlite::ffi::sqlite3_auto_extension(Some(std::mem::transmute(
-            sqlite_vec::sqlite3_vec_init as *const (),
-        )));
-    }
+    // Register sqlite-vec as auto extension (one-time init)
+    init_sqlite_vec();
 
     let conn = Connection::open(&path)?;
 

@@ -459,14 +459,21 @@ fn merge_remote_memories(
 
     for mem in memories {
         // Decrypt content (all cloud data must be encrypted)
-        let decrypted_content = crypto::decrypt_string(enc_key, &mem.content)
-            .unwrap_or_else(|_| mem.content.clone()); // Fallback for legacy plaintext data
+        let decrypted_content = match crypto::decrypt_string(enc_key, &mem.content) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("Skipping memory {} — decryption failed: {e}", mem.id);
+                continue; // Don't store garbled data
+            }
+        };
 
-        let decrypted_tags = if let Some(enc_tags) = mem.tags.first() {
-            // Tags are stored as a single encrypted JSON string in the array
+        let decrypted_tags: Vec<String> = if let Some(enc_tags) = mem.tags.first() {
             match crypto::decrypt_string(enc_key, enc_tags) {
                 Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
-                Err(_) => mem.tags.clone(), // Fallback for legacy plaintext
+                Err(e) => {
+                    tracing::warn!("Memory {} — tags decryption failed: {e}, using empty tags", mem.id);
+                    vec![]
+                }
             }
         } else {
             vec![]
@@ -517,7 +524,7 @@ fn merge_remote_memories(
             )?;
             // Re-embed if content was actually updated
             if rows > 0 {
-                if let Some(ref emb) = embedder { let mut emb = emb.lock().unwrap();
+                if let Some(ref emb) = embedder { let mut emb = emb.lock().unwrap_or_else(|e| e.into_inner());
                     if let Ok(embedding) = emb.embed(&content) {
                         let _ = conn.execute(
                             "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",
@@ -534,7 +541,7 @@ fn merge_remote_memories(
             )?;
 
             // Generate embedding for the new memory
-            if let Some(ref emb) = embedder { let mut emb = emb.lock().unwrap();
+            if let Some(ref emb) = embedder { let mut emb = emb.lock().unwrap_or_else(|e| e.into_inner());
                 if let Ok(embedding) = emb.embed(&content) {
                     let _ = conn.execute(
                         "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",

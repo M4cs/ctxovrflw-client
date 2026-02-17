@@ -1,6 +1,6 @@
 [package]
 name = "ctxovrflw"
-version = "0.4.5"
+version = "0.4.6"
 edition = "2024"
 description = "Universal AI context layer. One memory, every tool."
 license = "MIT"
@@ -77,6 +77,7 @@ base64 = "0.22"
 rand = "0.8"
 
 # Utilities
+url = "2"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"

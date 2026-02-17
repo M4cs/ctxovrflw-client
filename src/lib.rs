@@ -6,5 +6,6 @@ pub mod embed;
 pub mod http;
 pub mod mcp;
 pub mod sync;
+pub mod validation;
 #[cfg(feature = "pro")]
 pub mod webhooks;

@@ -6,53 +6,10 @@ use axum::{
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use chrono::Utc;
-
 use crate::config::Config;
 use crate::db;
+use crate::validation::{sanitize_error, validate_tags, validate_subject, resolve_expiry, MAX_CONTENT_SIZE};
 use super::AppState;
-
-/// Parse a TTL string like "1h", "24h", "7d", "30m" into an expiry timestamp.
-fn parse_ttl(ttl: &str) -> Result<String, String> {
-    let ttl = ttl.trim().to_lowercase();
-    let (num_str, multiplier) = if ttl.ends_with('d') {
-        (&ttl[..ttl.len() - 1], 86400i64)
-    } else if ttl.ends_with('h') {
-        (&ttl[..ttl.len() - 1], 3600i64)
-    } else if ttl.ends_with('m') {
-        (&ttl[..ttl.len() - 1], 60i64)
-    } else if ttl.ends_with('s') {
-        (&ttl[..ttl.len() - 1], 1i64)
-    } else {
-        return Err(format!("Invalid TTL format: '{ttl}'. Use '1h', '24h', '7d', '30m'"));
-    };
-    let num: i64 = num_str.parse().map_err(|_| format!("Invalid TTL number: '{num_str}'"))?;
-    if num <= 0 { return Err("TTL must be positive".into()); }
-    let expires = Utc::now() + chrono::Duration::seconds(num * multiplier);
-    Ok(expires.to_rfc3339())
-}
-
-fn resolve_expiry(ttl: Option<&str>, expires_at: Option<&str>) -> Result<Option<String>, String> {
-    if let Some(t) = ttl { return Ok(Some(parse_ttl(t)?)); }
-    if let Some(e) = expires_at {
-        chrono::DateTime::parse_from_rfc3339(e)
-            .map_err(|_| "Invalid expires_at: must be ISO 8601 / RFC 3339".to_string())?;
-        return Ok(Some(e.to_string()));
-    }
-    Ok(None)
-}
-
-
-
-/// Sanitize error messages to avoid leaking internal paths or implementation details.
-fn sanitize_error(e: &impl std::fmt::Display) -> String {
-    let msg = e.to_string();
-    // Strip file paths
-    if msg.contains('/') || msg.contains("\\\\") {
-        return "Internal error".to_string();
-    }
-    msg
-}
 
 pub fn router(state: AppState) -> Router {
     let r = Router::new()
@@ -109,37 +66,6 @@ struct StoreRequest {
     expires_at: Option<String>,
 }
 
-/// Maximum memory content size (100 KB). Prevents unbounded allocation from oversized payloads.
-const MAX_CONTENT_SIZE: usize = 100 * 1024;
-const MAX_TAG_LENGTH: usize = 200;
-const MAX_TAGS: usize = 50;
-const MAX_SUBJECT_LENGTH: usize = 500;
-
-/// Deduplicate and validate tags. Returns cleaned tags or an error message.
-fn validate_tags(tags: &[String]) -> Result<Vec<String>, String> {
-    if tags.len() > MAX_TAGS {
-        return Err(format!("Too many tags ({}). Maximum is {}.", tags.len(), MAX_TAGS));
-    }
-    for tag in tags {
-        if tag.len() > MAX_TAG_LENGTH {
-            return Err(format!("Tag too long ({} chars). Maximum is {} chars.", tag.len(), MAX_TAG_LENGTH));
-        }
-    }
-    let mut deduped: Vec<String> = tags.to_vec();
-    deduped.sort();
-    deduped.dedup();
-    Ok(deduped)
-}
-
-fn validate_subject(subject: Option<&str>) -> Result<(), String> {
-    if let Some(s) = subject {
-        if s.len() > MAX_SUBJECT_LENGTH {
-            return Err(format!("Subject too long ({} chars). Maximum is {} chars.", s.len(), MAX_SUBJECT_LENGTH));
-        }
-    }
-    Ok(())
-}
-
 async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreRequest>) -> Json<Value> {
     if body.content.trim().is_empty() {
         return Json(json!({ "ok": false, "error": "Content cannot be empty" }));
@@ -181,10 +107,14 @@ async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreReque
         .unwrap_or_default();
     let source = body.source.as_deref().unwrap_or("api");
 
-    // Generate embedding using shared embedder
+    // Generate embedding using shared embedder (spawn_blocking to avoid blocking tokio)
     let embedding = if let Some(ref emb) = state.embedder {
-        let mut e = emb.lock().unwrap();
-        e.embed(&body.content).ok()
+        let emb = emb.clone();
+        let content = body.content.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut e = emb.lock().unwrap_or_else(|e| e.into_inner());
+            e.embed(&content).ok()
+        }).await.ok().flatten()
     } else {
         None
     };
@@ -197,7 +127,6 @@ async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreReque
     match db::memories::store_with_expiry(&conn, &body.content, &mtype, &tags, body.subject.as_deref(), Some(source), embedding.as_deref(), expires_at.as_deref()) {
         Ok(memory) => {
             { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
-            // Immediate push to cloud if logged in
             if cfg.is_logged_in() {
                 let id = memory.id.clone();
                 let cfg2 = cfg.clone();
@@ -207,7 +136,7 @@ async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreReque
             }
             Json(json!({ "ok": true, "memory": memory }))
         }
-        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     }
 }
 
@@ -226,7 +155,7 @@ fn default_limit() -> usize {
 async fn list_memories(Query(q): Query<ListQuery>) -> Json<Value> {
     let conn = match db::open() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     let limit = q.limit.min(100);
@@ -235,7 +164,7 @@ async fn list_memories(Query(q): Query<ListQuery>) -> Json<Value> {
             let total = db::memories::count(&conn).unwrap_or(0);
             Json(json!({ "ok": true, "memories": memories, "total": total, "limit": limit, "offset": q.offset }))
         }
-        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     }
 }
 
@@ -248,8 +177,6 @@ struct RecallRequest {
     max_tokens: Option<usize>,
     #[serde(default)]
     subject: Option<String>,
-    /// Force a specific search method: "keyword", "semantic", or "hybrid" (default).
-    /// Useful for benchmarking tier differences.
     #[serde(default)]
     search_method: Option<String>,
 }
@@ -259,11 +186,9 @@ fn default_recall_limit() -> usize {
 }
 
 async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) -> Json<Value> {
-    let cfg = &state.config;
-
     let conn = match db::open() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     use crate::db::search::SearchMethod;
@@ -280,26 +205,26 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
 
     let fetch_limit = if body.max_tokens.is_some() { body.limit.max(20) } else { body.limit };
 
-    // Determine forced search method (for benchmarking/tier simulation)
     let forced_method = body.search_method.as_deref();
 
     let (results, method) = match forced_method {
         Some("keyword") => {
-            // Free tier: keyword-only (FTS5)
             (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
         }
         Some("semantic") => {
-            // Standard tier: semantic-only (ONNX embeddings)
             if let Some(ref emb) = state.embedder {
-                let mut embedder = emb.lock().unwrap();
-                match embedder.embed(&body.query) {
-                    Ok(embedding) => {
-                        drop(embedder);
-                        let sem = db::search::semantic_search(&conn, &embedding, fetch_limit).unwrap_or_default();
+                let emb = emb.clone();
+                let query = body.query.clone();
+                let embedding = tokio::task::spawn_blocking(move || {
+                    let mut embedder = emb.lock().unwrap_or_else(|e| e.into_inner());
+                    embedder.embed(&query).ok()
+                }).await.ok().flatten();
+                match embedding {
+                    Some(emb_vec) => {
+                        let sem = db::search::semantic_search(&conn, &emb_vec, fetch_limit).unwrap_or_default();
                         (sem, SearchMethod::Semantic)
                     }
-                    Err(_) => {
-                        drop(embedder);
+                    None => {
                         (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
                     }
                 }
@@ -308,15 +233,18 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
             }
         }
         _ => {
-            // Default: hybrid search (pro) or semantic fallback
             if let Some(ref emb) = state.embedder {
-                let mut embedder = emb.lock().unwrap();
-                match embedder.embed(&body.query) {
-                    Ok(embedding) => {
-                        drop(embedder);
+                let emb = emb.clone();
+                let query = body.query.clone();
+                let embedding = tokio::task::spawn_blocking(move || {
+                    let mut embedder = emb.lock().unwrap_or_else(|e| e.into_inner());
+                    embedder.embed(&query).ok()
+                }).await.ok().flatten();
+                match embedding {
+                    Some(emb_vec) => {
                         #[cfg(feature = "pro")]
                         {
-                            let hybrid = db::search::hybrid_search(&conn, &body.query, &embedding, fetch_limit).unwrap_or_default();
+                            let hybrid = db::search::hybrid_search(&conn, &body.query, &emb_vec, fetch_limit).unwrap_or_default();
                             if !hybrid.is_empty() {
                                 (hybrid, SearchMethod::Hybrid)
                             } else {
@@ -325,7 +253,7 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
                         }
                         #[cfg(not(feature = "pro"))]
                         {
-                            let sem = db::search::semantic_search(&conn, &embedding, fetch_limit).unwrap_or_default();
+                            let sem = db::search::semantic_search(&conn, &emb_vec, fetch_limit).unwrap_or_default();
                             if !sem.is_empty() {
                                 (sem, SearchMethod::Semantic)
                             } else {
@@ -333,8 +261,7 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
                             }
                         }
                     }
-                    Err(_) => {
-                        drop(embedder);
+                    None => {
                         (db::search::keyword_search(&conn, &body.query, fetch_limit).unwrap_or_default(), SearchMethod::Keyword)
                     }
                 }
@@ -368,20 +295,20 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
 async fn get_memory(Path(id): Path<String>) -> Json<Value> {
     let conn = match db::open() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     match db::memories::get(&conn, &id) {
         Ok(Some(memory)) => Json(json!({ "ok": true, "memory": memory })),
         Ok(None) => Json(json!({ "ok": false, "error": "Not found" })),
-        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     }
 }
 
 async fn delete_memory(Path(id): Path<String>) -> Json<Value> {
     let conn = match db::open() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     match db::memories::delete(&conn, &id) {
@@ -390,7 +317,7 @@ async fn delete_memory(Path(id): Path<String>) -> Json<Value> {
             Json(json!({ "ok": true }))
         }
         Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
-        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     }
 }
 
@@ -418,7 +345,6 @@ async fn update_memory(State(state): State<AppState>, Path(id): Path<String>, Js
         Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
-    // Validate tags and subject if provided
     let validated_tags = if let Some(ref tags) = body.tags {
         match validate_tags(tags) {
             Ok(t) => Some(t),
@@ -431,9 +357,8 @@ async fn update_memory(State(state): State<AppState>, Path(id): Path<String>, Js
         return Json(json!({ "ok": false, "error": e }));
     }
 
-    // Resolve expiry
     let expires_at = if body.remove_expiry.unwrap_or(false) {
-        Some(None) // clear expiry
+        Some(None)
     } else if body.ttl.is_some() || body.expires_at.is_some() {
         match resolve_expiry(body.ttl.as_deref(), body.expires_at.as_deref()) {
             Ok(Some(e)) => Some(Some(e)),
@@ -444,11 +369,15 @@ async fn update_memory(State(state): State<AppState>, Path(id): Path<String>, Js
         None
     };
 
-    // Re-embed if content changed
+    // Re-embed if content changed (spawn_blocking)
     let embedding = if let Some(ref c) = body.content {
         if let Some(ref emb) = state.embedder {
-            let mut e = emb.lock().unwrap();
-            e.embed(c).ok()
+            let emb = emb.clone();
+            let content = c.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut e = emb.lock().unwrap_or_else(|e| e.into_inner());
+                e.embed(&content).ok()
+            }).await.ok().flatten()
         } else { None }
     } else { None };
 
@@ -471,14 +400,14 @@ async fn update_memory(State(state): State<AppState>, Path(id): Path<String>, Js
             Json(json!({ "ok": true, "memory": memory }))
         }
         Ok(None) => Json(json!({ "ok": false, "error": "Not found" })),
-        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     }
 }
 
 async fn subjects() -> Json<Value> {
     let conn = match db::open() {
         Ok(c) => c,
-        Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     };
 
     match db::search::list_subjects(&conn) {
@@ -489,7 +418,7 @@ async fn subjects() -> Json<Value> {
                 .collect();
             Json(json!({ "ok": true, "subjects": list }))
         }
-        Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+        Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
     }
 }
 
@@ -539,14 +468,14 @@ mod pro_routes {
     pub async fn create_entity(Json(body): Json<CreateEntityRequest>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::graph::upsert_entity(&conn, &body.name, &body.entity_type, body.metadata.as_ref()) {
             Ok(entity) => {
                 crate::webhooks::fire("entity.created", json!({ "entity": entity }));
                 Json(json!({ "ok": true, "entity": entity }))
             }
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
@@ -569,7 +498,7 @@ mod pro_routes {
     pub async fn list_entities_http(Query(q): Query<ListEntitiesQuery>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         let limit = q.limit.min(200);
         let entities = if let Some(ref query) = q.query {
@@ -582,26 +511,26 @@ mod pro_routes {
                 let total = db::graph::count_entities(&conn).unwrap_or(0);
                 Json(json!({ "ok": true, "entities": entities, "total": total }))
             }
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
     pub async fn get_entity_http(Path(id): Path<String>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::graph::get_entity(&conn, &id) {
             Ok(Some(entity)) => Json(json!({ "ok": true, "entity": entity })),
             Ok(None) => Json(json!({ "ok": false, "error": "Not found" })),
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
     pub async fn delete_entity_http(Path(id): Path<String>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::graph::delete_entity(&conn, &id) {
             Ok(true) => {
@@ -609,7 +538,7 @@ mod pro_routes {
                 Json(json!({ "ok": true }))
             }
             Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
@@ -633,7 +562,7 @@ mod pro_routes {
     pub async fn create_relation(Json(body): Json<CreateRelationRequest>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::graph::upsert_relation(
             &conn,
@@ -648,7 +577,7 @@ mod pro_routes {
                 crate::webhooks::fire("relation.created", json!({ "relation": relation }));
                 Json(json!({ "ok": true, "relation": relation }))
             }
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
@@ -663,7 +592,7 @@ mod pro_routes {
     pub async fn get_relations_http(Path(entity_id): Path<String>, Query(q): Query<GetRelationsQuery>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         let direction = q.direction.as_deref();
         match db::graph::get_relations(&conn, &entity_id, q.relation_type.as_deref(), direction) {
@@ -678,14 +607,14 @@ mod pro_routes {
                     .collect();
                 Json(json!({ "ok": true, "relations": results }))
             }
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
     pub async fn delete_relation_http(Path(id): Path<String>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::graph::delete_relation(&conn, &id) {
             Ok(true) => {
@@ -693,7 +622,7 @@ mod pro_routes {
                 Json(json!({ "ok": true }))
             }
             Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
@@ -714,22 +643,43 @@ mod pro_routes {
     pub async fn traverse_http(Path(entity_id): Path<String>, Query(q): Query<TraverseQuery>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::graph::traverse(&conn, &entity_id, q.max_depth, q.relation_type.as_deref(), q.min_confidence) {
             Ok(nodes) => Json(json!({ "ok": true, "nodes": nodes, "total": nodes.len() })),
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
     pub async fn list_webhooks() -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::webhooks::list(&conn) {
-            Ok(hooks) => Json(json!({ "ok": true, "webhooks": hooks })),
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Ok(hooks) => {
+                // Mask secrets in list response
+                let masked: Vec<Value> = hooks.iter().map(|h| {
+                    let secret_display = h.secret.as_ref().map(|s| {
+                        if s.len() > 8 {
+                            format!("whsec_...{}", &s[s.len()-4..])
+                        } else {
+                            "whsec_****".to_string()
+                        }
+                    });
+                    json!({
+                        "id": h.id,
+                        "url": h.url,
+                        "secret": secret_display,
+                        "events": h.events,
+                        "enabled": h.enabled,
+                        "created_at": h.created_at,
+                        "updated_at": h.updated_at,
+                    })
+                }).collect();
+                Json(json!({ "ok": true, "webhooks": masked }))
+            }
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
@@ -742,25 +692,52 @@ mod pro_routes {
     }
 
     pub async fn create_webhook(Json(body): Json<CreateWebhookRequest>) -> Json<Value> {
+        // Validate URL for SSRF
+        if let Err(e) = db::webhooks::validate_webhook_url(&body.url) {
+            return Json(json!({ "ok": false, "error": e.to_string() }));
+        }
+
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
-        match db::webhooks::create(&conn, &body.url, &body.events, body.secret.as_deref()) {
-            Ok(hook) => Json(json!({ "ok": true, "webhook": hook })),
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+
+        // Hash the secret before storing
+        let hashed_secret = body.secret.as_deref().map(db::webhooks::hash_secret);
+
+        match db::webhooks::create(&conn, &body.url, &body.events, hashed_secret.as_deref()) {
+            Ok(hook) => {
+                let secret_display = body.secret.as_ref().map(|s| {
+                    if s.len() > 8 {
+                        format!("whsec_...{}", &s[s.len()-4..])
+                    } else {
+                        "whsec_****".to_string()
+                    }
+                });
+                Json(json!({
+                    "ok": true,
+                    "webhook": {
+                        "id": hook.id,
+                        "url": hook.url,
+                        "secret": secret_display,
+                        "events": hook.events,
+                        "enabled": hook.enabled,
+                    }
+                }))
+            }
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 
     pub async fn delete_webhook(Path(id): Path<String>) -> Json<Value> {
         let conn = match db::open() {
             Ok(c) => c,
-            Err(e) => return Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         };
         match db::webhooks::delete(&conn, &id) {
             Ok(true) => Json(json!({ "ok": true })),
             Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
-            Err(e) => Json(json!({ "ok": false, "error": format!("{e}") })),
+            Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
 }

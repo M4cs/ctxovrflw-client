@@ -45,6 +45,73 @@ pub fn migrate(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// Validate a webhook URL to prevent SSRF attacks.
+/// Rejects private/reserved IP ranges.
+pub fn validate_webhook_url(url: &str) -> Result<()> {
+    let url = url.trim();
+    if url.is_empty() {
+        anyhow::bail!("Webhook URL cannot be empty");
+    }
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        anyhow::bail!("Webhook URL must start with http:// or https://");
+    }
+
+    // Parse the URL and resolve the hostname
+    let parsed: url::Url = url.parse().map_err(|_| anyhow::anyhow!("Invalid URL"))?;
+    let host = parsed.host_str().ok_or_else(|| anyhow::anyhow!("URL has no host"))?;
+
+    // Check for obvious private hostnames
+    if host == "localhost" || host == "0.0.0.0" || host.ends_with(".local") {
+        anyhow::bail!("Webhook URL must not point to localhost or private hosts");
+    }
+
+    // Try to parse as IP directly
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if is_private_ip(&ip) {
+            anyhow::bail!("Webhook URL must not point to a private/reserved IP address");
+        }
+    } else {
+        // Resolve hostname and check all IPs
+        use std::net::ToSocketAddrs;
+        let port = parsed.port().unwrap_or(if parsed.scheme() == "https" { 443 } else { 80 });
+        if let Ok(addrs) = (host, port).to_socket_addrs() {
+            for addr in addrs {
+                if is_private_ip(&addr.ip()) {
+                    anyhow::bail!("Webhook URL resolves to a private/reserved IP address");
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_private_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()                          // 127.x.x.x
+                || v4.is_private()                    // 10.x, 172.16-31.x, 192.168.x
+                || v4.is_link_local()                 // 169.254.x.x
+                || v4.is_unspecified()                // 0.0.0.0
+                || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64  // 100.64-127.x (CGNAT)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()                          // ::1
+                || v6.is_unspecified()                // ::
+                || v6.segments()[0] == 0xfd00         // fd00::/8 (ULA)
+                || v6.segments()[0] == 0xfe80         // fe80::/10 (link-local)
+                || v6.segments()[0] == 0xfc00         // fc00::/7
+        }
+    }
+}
+
+/// Hash a webhook secret using SHA-256 for storage.
+pub fn hash_secret(secret: &str) -> String {
+    use ring::digest;
+    let hash = digest::digest(&digest::SHA256, secret.as_bytes());
+    hash.as_ref().iter().map(|b| format!("{:02x}", b)).collect()
+}
+
 pub fn create(conn: &Connection, url: &str, events: &[String], secret: Option<&str>) -> Result<Webhook> {
     let url = url.trim();
     if url.is_empty() {

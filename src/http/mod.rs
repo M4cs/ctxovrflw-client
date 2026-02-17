@@ -5,6 +5,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use axum::Router;
 use axum::http::{header, Method};
+use axum::middleware::{self, Next};
+use axum::extract::Request;
+use axum::response::{Response, IntoResponse};
 use std::sync::Mutex;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
@@ -17,6 +20,66 @@ use crate::embed::Embedder;
 pub struct AppState {
     pub embedder: Option<Arc<Mutex<Embedder>>>,
     pub config: Config,
+}
+
+/// Auth middleware: checks Bearer token on all routes except /health and /.
+async fn auth_middleware(
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_string();
+
+    // Skip auth for health endpoints
+    if path == "/" || path == "/health" {
+        return next.run(request).await;
+    }
+
+    // Get expected token from config
+    let expected_token = match Config::load() {
+        Ok(cfg) => cfg.auth_token,
+        Err(_) => None,
+    };
+
+    // If no token configured, allow all (backwards compat during migration)
+    let Some(expected) = expected_token else {
+        return next.run(request).await;
+    };
+
+    // Check Authorization header
+    let auth_header = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+
+    // Also check ?token= query param (for SSE clients that can't set headers)
+    let query_token = request
+        .uri()
+        .query()
+        .and_then(|q| {
+            q.split('&')
+                .find_map(|pair| {
+                    let (k, v) = pair.split_once('=')?;
+                    if k == "token" { Some(v.to_string()) } else { None }
+                })
+        });
+
+    let authenticated = if let Some(auth) = auth_header {
+        auth == format!("Bearer {expected}")
+    } else if let Some(tok) = query_token {
+        tok == expected
+    } else {
+        false
+    };
+
+    if !authenticated {
+        return (
+            axum::http::StatusCode::UNAUTHORIZED,
+            axum::Json(serde_json::json!({ "error": "Unauthorized" })),
+        ).into_response();
+    }
+
+    next.run(request).await
 }
 
 pub async fn serve(cfg: Config, port: u16) -> Result<()> {
@@ -63,6 +126,7 @@ pub async fn serve(cfg: Config, port: u16) -> Result<()> {
     let app = Router::new()
         .merge(routes::router(state))
         .nest("/mcp", crate::mcp::sse::router(cfg))
+        .layer(middleware::from_fn(auth_middleware))
         .layer(cors)
         .layer(RequestBodyLimitLayer::new(512 * 1024)); // 512 KB max request body
 

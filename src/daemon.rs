@@ -43,6 +43,10 @@ pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
     // Foreground mode
     tracing::info!("Starting ctxovrflw daemon on port {port}");
 
+    // Ensure auth token exists
+    let mut cfg = cfg.clone();
+    cfg.ensure_auth_token()?;
+
     let pid_path = Config::pid_path()?;
     std::fs::write(&pid_path, std::process::id().to_string())?;
 

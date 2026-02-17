@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 
 use crate::config::{Config, Tier};
 use crate::db;
+use crate::validation::{self, validate_tags, validate_subject, MAX_CONTENT_SIZE};
 
 pub fn list_tools(cfg: &Config) -> Vec<Value> {
     let mut tools = vec![
@@ -420,40 +421,11 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
     tools
 }
 
-/// Parse a TTL string like "1h", "24h", "7d", "30m" into an expiry timestamp.
-fn parse_ttl(ttl: &str) -> Result<String> {
-    let ttl = ttl.trim().to_lowercase();
-    let (num_str, multiplier) = if ttl.ends_with('d') {
-        (&ttl[..ttl.len() - 1], 86400i64)
-    } else if ttl.ends_with('h') {
-        (&ttl[..ttl.len() - 1], 3600i64)
-    } else if ttl.ends_with('m') {
-        (&ttl[..ttl.len() - 1], 60i64)
-    } else if ttl.ends_with('s') {
-        (&ttl[..ttl.len() - 1], 1i64)
-    } else {
-        anyhow::bail!("Invalid TTL format: '{ttl}'. Use format like '1h', '24h', '7d', '30m'");
-    };
-    let num: i64 = num_str.parse().map_err(|_| anyhow::anyhow!("Invalid TTL number: '{num_str}'"))?;
-    if num <= 0 {
-        anyhow::bail!("TTL must be positive");
-    }
-    let expires = chrono::Utc::now() + chrono::Duration::seconds(num * multiplier);
-    Ok(expires.to_rfc3339())
-}
-
-/// Resolve expiry from ttl or expires_at args. Returns Ok(Some(timestamp)) or Ok(None).
-fn resolve_expiry(args: &Value) -> Result<Option<String>> {
-    if let Some(ttl) = args["ttl"].as_str() {
-        return Ok(Some(parse_ttl(ttl)?));
-    }
-    if let Some(exp) = args["expires_at"].as_str() {
-        // Validate it parses as a datetime
-        let _ = chrono::DateTime::parse_from_rfc3339(exp)
-            .map_err(|_| anyhow::anyhow!("Invalid expires_at: must be ISO 8601 / RFC 3339"))?;
-        return Ok(Some(exp.to_string()));
-    }
-    Ok(None)
+/// Resolve expiry from JSON args using shared validation.
+fn resolve_expiry_from_args(args: &Value) -> Result<Option<String>> {
+    let ttl = args["ttl"].as_str();
+    let expires_at = args["expires_at"].as_str();
+    validation::resolve_expiry(ttl, expires_at).map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
@@ -490,36 +462,7 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
     }
 }
 
-/// Maximum memory content size (100 KB).
-const MAX_CONTENT_SIZE: usize = 100 * 1024;
-const MAX_TAG_LENGTH: usize = 200;
-const MAX_TAGS: usize = 50;
-const MAX_SUBJECT_LENGTH: usize = 500;
-
-/// Deduplicate and validate tags.
-fn validate_tags(tags: &[String]) -> std::result::Result<Vec<String>, String> {
-    if tags.len() > MAX_TAGS {
-        return Err(format!("Too many tags ({}). Maximum is {}.", tags.len(), MAX_TAGS));
-    }
-    for tag in tags {
-        if tag.len() > MAX_TAG_LENGTH {
-            return Err(format!("Tag too long ({} chars). Maximum is {} chars.", tag.len(), MAX_TAG_LENGTH));
-        }
-    }
-    let mut deduped: Vec<String> = tags.to_vec();
-    deduped.sort();
-    deduped.dedup();
-    Ok(deduped)
-}
-
-fn validate_subject(subject: Option<&str>) -> std::result::Result<(), String> {
-    if let Some(s) = subject {
-        if s.len() > MAX_SUBJECT_LENGTH {
-            return Err(format!("Subject too long ({} chars). Maximum is {} chars.", s.len(), MAX_SUBJECT_LENGTH));
-        }
-    }
-    Ok(())
-}
+// Validation functions and constants imported from crate::validation
 
 async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
     let content = args["content"]
@@ -570,7 +513,7 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
     // Generate embedding if semantic search is available
     let embedding = if cfg.tier.semantic_search_enabled() {
         match crate::embed::get_or_init() {
-            Ok(emb_arc) => emb_arc.lock().unwrap().embed(content).ok(),
+            Ok(emb_arc) => emb_arc.lock().unwrap_or_else(|e| e.into_inner()).embed(content).ok(),
             Err(_) => None,
         }
     } else {
@@ -585,7 +528,7 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
         }));
     }
 
-    let expires_at = match resolve_expiry(args) {
+    let expires_at = match resolve_expiry_from_args(args) {
         Ok(e) => e,
         Err(e) => return Ok(json!({
             "content": [{ "type": "text", "text": format!("Invalid expiry: {e}") }],
@@ -636,10 +579,8 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     let max_tokens = args["max_tokens"].as_u64().map(|t| t as usize);
     let subject_filter = args["subject"].as_str();
 
-    // Sync before recall to get latest from other devices
-    if cfg.is_logged_in() {
-        let _ = crate::sync::run_silent(cfg).await;
-    }
+    // Sync happens on its own schedule (auto-sync daemon task).
+    // Don't trigger a full sync before every recall — it adds latency.
 
     use crate::db::search::SearchMethod;
 
@@ -678,7 +619,7 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
 
     let (results, method) = if cfg.tier.semantic_search_enabled() {
         match crate::embed::get_or_init() {
-            Ok(emb_arc) => match emb_arc.lock().unwrap().embed(query) {
+            Ok(emb_arc) => match emb_arc.lock().unwrap_or_else(|e| e.into_inner()).embed(query) {
                 Ok(embedding) => {
                     #[cfg(feature = "pro")]
                     {
@@ -839,7 +780,7 @@ async fn handle_update_memory(cfg: &Config, args: &Value) -> Result<Value> {
     let expires_at = if args["remove_expiry"].as_bool().unwrap_or(false) {
         Some(None) // explicitly remove
     } else if args["ttl"].as_str().is_some() || args["expires_at"].as_str().is_some() {
-        match resolve_expiry(args) {
+        match resolve_expiry_from_args(args) {
             Ok(Some(e)) => Some(Some(e)),
             Ok(None) => None,
             Err(e) => return Ok(json!({
@@ -856,7 +797,7 @@ async fn handle_update_memory(cfg: &Config, args: &Value) -> Result<Value> {
         if cfg.tier.semantic_search_enabled() {
             crate::embed::get_or_init()
                 .ok()
-                .and_then(|arc| arc.lock().unwrap().embed(new_content).ok())
+                .and_then(|arc| arc.lock().unwrap_or_else(|e| e.into_inner()).embed(new_content).ok())
         } else {
             None
         }
@@ -951,11 +892,6 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
     let subject_filter = args["subject"].as_str();
     let max_tokens = args["max_tokens"].as_u64().unwrap_or(2000) as usize;
 
-    // Sync first
-    if cfg.is_logged_in() {
-        let _ = crate::sync::run_silent(cfg).await;
-    }
-
     let conn = db::open()?;
 
     // Gather memories — by subject if specified, by topic search if specified, or all recent
@@ -967,7 +903,7 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
 
     if let Some(q) = topic {
         if cfg.tier.semantic_search_enabled() {
-            if let Ok(emb_arc) = crate::embed::get_or_init() { let mut embedder = emb_arc.lock().unwrap();
+            if let Ok(emb_arc) = crate::embed::get_or_init() { let mut embedder = emb_arc.lock().unwrap_or_else(|e| e.into_inner());
                 if let Ok(embedding) = embedder.embed(q) {
                     let sem = db::search::semantic_search(&conn, &embedding, 20).unwrap_or_default();
                     for (mem, _score) in sem {
@@ -1485,7 +1421,7 @@ async fn handle_consolidate(cfg: &Config, args: &Value) -> Result<Value> {
 
     // Get by topic (semantic search)
     if let Some(q) = topic {
-        if let Ok(emb_arc) = crate::embed::get_or_init() { let mut embedder = emb_arc.lock().unwrap();
+        if let Ok(emb_arc) = crate::embed::get_or_init() { let mut embedder = emb_arc.lock().unwrap_or_else(|e| e.into_inner());
             if let Ok(embedding) = embedder.embed(q) {
                 let sem = db::search::semantic_search(&conn, &embedding, 30).unwrap_or_default();
                 for (mem, _score) in sem {

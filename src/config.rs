@@ -53,6 +53,11 @@ pub struct Config {
     /// Cloud-signed capability token for tier enforcement
     #[serde(default)]
     pub capability_token: Option<String>,
+
+    /// Bearer token for localhost API authentication.
+    /// Generated on first `init`, required for all non-health routes.
+    #[serde(default)]
+    pub auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -290,17 +295,11 @@ impl Config {
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    crate::validation::hex_encode(bytes)
 }
 
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
-        .collect()
+    crate::validation::hex_decode(s)
 }
 
 impl Default for Config {
@@ -320,11 +319,27 @@ impl Default for Config {
             key_cached_at: None,
             remote_daemon_url: None,
             capability_token: None,
+            auth_token: None,
         }
     }
 }
 
 impl Config {
+    /// Ensure an auth token exists; generate one if missing.
+    pub fn ensure_auth_token(&mut self) -> Result<()> {
+        if self.auth_token.is_none() {
+            use rand::Rng;
+            let token: String = rand::thread_rng()
+                .sample_iter(&rand::distributions::Alphanumeric)
+                .take(48)
+                .map(char::from)
+                .collect();
+            self.auth_token = Some(token);
+            self.save()?;
+        }
+        Ok(())
+    }
+
     /// Returns true if this instance should connect to a remote daemon
     /// instead of running its own.
     pub fn is_remote_client(&self) -> bool {

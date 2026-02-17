@@ -8,6 +8,7 @@ mod embed;
 mod http;
 mod mcp;
 mod sync;
+mod validation;
 #[cfg(feature = "pro")]
 mod webhooks;
 

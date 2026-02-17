@@ -14,6 +14,7 @@ use tokio::sync::{mpsc, Mutex};
 use uuid::Uuid;
 
 use crate::config::Config;
+use crate::validation::sanitize_error;
 
 type SessionMap = Arc<Mutex<HashMap<String, mpsc::Sender<String>>>>;
 
@@ -34,6 +35,24 @@ pub fn router(cfg: Config) -> Router {
         }))
 }
 
+/// Drop guard that removes the session from the map when the SSE stream disconnects.
+struct SessionDropGuard {
+    session_id: String,
+    sessions: SessionMap,
+}
+
+impl Drop for SessionDropGuard {
+    fn drop(&mut self) {
+        let session_id = self.session_id.clone();
+        let sessions = self.sessions.clone();
+        // Spawn a task to clean up since we can't await in Drop
+        tokio::spawn(async move {
+            sessions.lock().await.remove(&session_id);
+            tracing::debug!("SSE session {} cleaned up", session_id);
+        });
+    }
+}
+
 /// GET /mcp/sse — establish SSE stream
 async fn handle_sse(
     sessions: SessionMap,
@@ -44,6 +63,12 @@ async fn handle_sse(
 
     sessions.lock().await.insert(session_id.clone(), tx);
 
+    // Create drop guard for cleanup
+    let _guard = SessionDropGuard {
+        session_id: session_id.clone(),
+        sessions: sessions.clone(),
+    };
+
     let stream = async_stream::stream! {
         // First event: tell the client where to POST messages
         let endpoint = format!("/mcp/messages?sessionId={}", session_id);
@@ -53,6 +78,9 @@ async fn handle_sse(
         while let Some(msg) = rx.recv().await {
             yield Ok(Event::default().event("message").data(msg));
         }
+
+        // Guard will be dropped here, cleaning up the session
+        drop(_guard);
     };
 
     Sse::new(stream).keep_alive(KeepAlive::default())
@@ -101,7 +129,7 @@ async fn handle_message(
         }
         Err(e) => (
             axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Error: {e}"),
+            format!("Error: {}", sanitize_error(&e)),
         ),
     }
 }
