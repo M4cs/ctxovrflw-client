@@ -595,23 +595,36 @@ impl App {
     }
 
     fn finish_openclaw_integration(&mut self) {
-        // Check for MEMORY.md migration
+        // Check for workspace files to migrate
         let home = dirs::home_dir().unwrap_or_default();
         let workspace = home.join(".openclaw/workspace");
-        let memory_md = workspace.join("MEMORY.md");
-        if memory_md.exists() {
-            let lines = std::fs::read_to_string(&memory_md)
-                .map(|c| c.lines().count())
-                .unwrap_or(0);
-            if lines > 5 {
-                self.lines.push(LogLine::info(format!("Found MEMORY.md ({lines} lines)")));
-                self.interaction = Interaction::Confirm {
-                    prompt: "Migrate MEMORY.md into ctxovrflw?".into(),
-                    default: true,
-                };
-                self.flow = FlowState::AskOpenClawMigrate;
-                return;
+        
+        let files_to_check = ["IDENTITY.md", "SOUL.md", "USER.md", "AGENTS.md", "MEMORY.md"];
+        let mut found: Vec<String> = Vec::new();
+        for name in &files_to_check {
+            let path = workspace.join(name);
+            if path.exists() {
+                let lines = std::fs::read_to_string(&path)
+                    .map(|c| c.lines().count())
+                    .unwrap_or(0);
+                if lines > 3 {
+                    found.push(format!("{name} ({lines} lines)"));
+                }
             }
+        }
+
+        if !found.is_empty() {
+            self.lines.push(LogLine::header("Workspace files found:"));
+            for f in &found {
+                self.lines.push(LogLine::info(f.clone()));
+            }
+            self.lines.push(LogLine::blank());
+            self.interaction = Interaction::Confirm {
+                prompt: "Migrate workspace files into ctxovrflw memories?".into(),
+                default: true,
+            };
+            self.flow = FlowState::AskOpenClawMigrate;
+            return;
         }
 
         self.lines.push(LogLine::ok("OpenClaw integration complete"));
@@ -993,29 +1006,30 @@ impl App {
                 if yes {
                     self.flow = FlowState::RunOpenClawMigrate;
                     self.interaction = Interaction::Spinner {
-                        message: "Migrating MEMORY.md...".into(),
+                        message: "Migrating workspace files...".into(),
                     };
-                    // Run migration
-                    let home = dirs::home_dir().unwrap_or_default();
-                    let memory_md = home.join(".openclaw/workspace/MEMORY.md");
-                    match init::migrate_memory_md(&memory_md, &self.cfg).await {
+                    match init::migrate_workspace_files(&self.cfg).await {
                         Ok(count) => {
                             self.interaction = Interaction::None;
-                            self.lines.push(LogLine::ok(format!("Migrated {count} memories from MEMORY.md")));
+                            self.lines.push(LogLine::ok(format!("Migrated {count} memories from workspace files")));
 
-                            // Backup
-                            let backup = home.join(".openclaw/workspace/MEMORY.md.pre-ctxovrflw");
-                            let _ = std::fs::copy(&memory_md, &backup);
-                            self.lines.push(LogLine::ok("Original backed up to MEMORY.md.pre-ctxovrflw"));
-
-                            // Rewrite
-                            let stub = "# MEMORY.md\n\n\
-                                > **This file is no longer the primary memory store.**\n\
-                                > Memories are now managed by ctxovrflw.\n\
-                                > Use `ctxovrflw recall <query>` or the MCP `recall` tool.\n\n\
-                                To browse: `ctxovrflw memories`\n";
-                            let _ = std::fs::write(&memory_md, stub);
-                            self.lines.push(LogLine::ok("MEMORY.md updated"));
+                            // Backup and rewrite MEMORY.md if it exists
+                            let home = dirs::home_dir().unwrap_or_default();
+                            let memory_md = home.join(".openclaw/workspace/MEMORY.md");
+                            if memory_md.exists() {
+                                let content = std::fs::read_to_string(&memory_md).unwrap_or_default();
+                                if !content.contains("no longer the primary memory store") {
+                                    let backup = home.join(".openclaw/workspace/MEMORY.md.pre-ctxovrflw");
+                                    let _ = std::fs::copy(&memory_md, &backup);
+                                    let stub = "# MEMORY.md\n\n\
+                                        > **This file is no longer the primary memory store.**\n\
+                                        > Memories are now managed by ctxovrflw.\n\
+                                        > Use `ctxovrflw recall <query>` or the MCP `recall` tool.\n\n\
+                                        To browse: `ctxovrflw memories`\n";
+                                    let _ = std::fs::write(&memory_md, stub);
+                                    self.lines.push(LogLine::ok("MEMORY.md backed up and updated"));
+                                }
+                            }
                         }
                         Err(e) => {
                             self.interaction = Interaction::None;
@@ -1023,20 +1037,7 @@ impl App {
                         }
                     }
                 } else {
-                    self.lines.push(LogLine::info("Skipped MEMORY.md migration"));
-                }
-                // Check for daily logs
-                let home = dirs::home_dir().unwrap_or_default();
-                let memory_dir = home.join(".openclaw/workspace/memory");
-                if memory_dir.exists() {
-                    let count = std::fs::read_dir(&memory_dir)
-                        .map(|d| d.filter_map(|e| e.ok()).filter(|e| e.file_name().to_string_lossy().ends_with(".md")).count())
-                        .unwrap_or(0);
-                    if count > 0 {
-                        self.lines.push(LogLine::info(format!(
-                            "{count} daily log(s) in memory/ — kept as-is (coexist with ctxovrflw)"
-                        )));
-                    }
+                    self.lines.push(LogLine::info("Skipped workspace migration"));
                 }
                 self.lines.push(LogLine::ok("OpenClaw integration complete"));
                 self.complete_step();

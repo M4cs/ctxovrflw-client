@@ -1108,65 +1108,74 @@ async fn integrate_openclaw(cfg: &Config) -> Result<()> {
     // 1. Inject ctxovrflw section into AGENTS.md
     inject_openclaw_agents_md(&agents_md_path)?;
 
-    // 2. Offer to migrate MEMORY.md into ctxovrflw
-    if memory_md_path.exists() {
-        let content = std::fs::read_to_string(&memory_md_path)?;
-        let line_count = content.lines().count();
+    // 2. Offer to migrate workspace files into ctxovrflw
+    let files_to_check = ["IDENTITY.md", "SOUL.md", "USER.md", "AGENTS.md", "MEMORY.md"];
+    let mut found_files: Vec<String> = Vec::new();
+    for name in &files_to_check {
+        let path = workspace.join(name);
+        if path.exists() {
+            let lines = std::fs::read_to_string(&path)
+                .map(|c| c.lines().count())
+                .unwrap_or(0);
+            if lines > 3 {
+                found_files.push(format!("{name} ({lines} lines)"));
+            }
+        }
+    }
 
-        if line_count > 5 {
-            println!();
+    if !found_files.is_empty() {
+        println!();
+        println!("  {} Workspace files found:", style("📄").bold());
+        for f in &found_files {
+            println!("    {} {f}", style("•").dim());
+        }
+        println!();
+        println!(
+            "  {}",
+            style("Migrating imports your workspace context into ctxovrflw's").dim()
+        );
+        println!(
+            "  {}",
+            style("structured database with semantic search.").dim()
+        );
+        println!();
+
+        let migrate = Confirm::new()
+            .with_prompt("  Migrate workspace files into ctxovrflw?")
+            .default(true)
+            .interact()?;
+
+        if migrate {
+            let count = migrate_workspace_files(cfg).await?;
             println!(
-                "  {} Found MEMORY.md ({} lines)",
-                style("📄").bold(),
-                line_count,
+                "  {} Migrated {} memories from workspace files",
+                style("✓").green().bold(),
+                count
             );
-            println!(
-                "  {}",
-                style("Migrating imports your existing memories into ctxovrflw's").dim()
-            );
-            println!(
-                "  {}",
-                style("structured database with semantic search.").dim()
-            );
-            println!();
 
-            let migrate = Confirm::new()
-                .with_prompt("  Migrate MEMORY.md into ctxovrflw?")
-                .default(true)
-                .interact()?;
+            // Backup and rewrite MEMORY.md
+            if memory_md_path.exists() {
+                let content = std::fs::read_to_string(&memory_md_path)?;
+                if !content.contains("no longer the primary memory store") {
+                    let backup = workspace.join("MEMORY.md.pre-ctxovrflw");
+                    std::fs::copy(&memory_md_path, &backup)?;
+                    println!(
+                        "  {} MEMORY.md backed up to {}",
+                        style("✓").green(),
+                        style("MEMORY.md.pre-ctxovrflw").dim()
+                    );
 
-            if migrate {
-                let count = migrate_memory_md(&memory_md_path, cfg).await?;
-                println!(
-                    "  {} Migrated {} memories from MEMORY.md",
-                    style("✓").green().bold(),
-                    count
-                );
-
-                // Backup original
-                let backup = workspace.join("MEMORY.md.pre-ctxovrflw");
-                std::fs::copy(&memory_md_path, &backup)?;
-                println!(
-                    "  {} Original backed up to {}",
-                    style("✓").green(),
-                    style("MEMORY.md.pre-ctxovrflw").dim()
-                );
-
-                // Rewrite MEMORY.md to point to ctxovrflw
-                let stub = format!(
-                    "# MEMORY.md\n\n\
-                    > **This file is no longer the primary memory store.**\n\
-                    > Memories are now managed by ctxovrflw (semantic search, cross-device sync).\n\
-                    > Use `ctxovrflw recall <query>` or the MCP `recall` tool.\n\
-                    > Original content backed up to `MEMORY.md.pre-ctxovrflw`.\n\n\
-                    To browse memories: `ctxovrflw memories`\n\
-                    To search: `ctxovrflw recall \"<query>\"`\n"
-                );
-                std::fs::write(&memory_md_path, stub)?;
-                println!(
-                    "  {} MEMORY.md updated to point to ctxovrflw",
-                    style("✓").green()
-                );
+                    let stub = "# MEMORY.md\n\n\
+                        > **This file is no longer the primary memory store.**\n\
+                        > Memories are now managed by ctxovrflw.\n\
+                        > Use `ctxovrflw recall <query>` or the MCP `recall` tool.\n\n\
+                        To browse: `ctxovrflw memories`\n";
+                    std::fs::write(&memory_md_path, stub)?;
+                    println!(
+                        "  {} MEMORY.md updated to point to ctxovrflw",
+                        style("✓").green()
+                    );
+                }
             }
         }
     }
@@ -1282,6 +1291,138 @@ pub(crate) fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
     Ok(())
 }
 
+/// Migrate OpenClaw workspace files into ctxovrflw memories.
+/// Handles IDENTITY.md, SOUL.md, AGENTS.md, and MEMORY.md with appropriate chunking.
+pub(crate) async fn migrate_workspace_files(cfg: &Config) -> Result<usize> {
+    let home = dirs::home_dir().unwrap_or_default();
+    let workspace = home.join(".openclaw/workspace");
+    if !workspace.exists() {
+        return Ok(0);
+    }
+
+    let conn = crate::db::open()?;
+    let mut embedder = crate::embed::Embedder::new().ok();
+    let mut total = 0;
+
+    // IDENTITY.md — single memory with agent identity info
+    let identity_path = workspace.join("IDENTITY.md");
+    if identity_path.exists() {
+        let content = std::fs::read_to_string(&identity_path)?;
+        let content = content.trim();
+        if content.len() >= 10 && !already_migrated(&conn, "openclaw:IDENTITY.md")? {
+            store_migrated_memory(
+                &conn, content, Some("agent"),
+                embedder.as_mut(),
+                &["migrated", "identity", "openclaw"],
+                "openclaw:IDENTITY.md",
+            )?;
+            total += 1;
+        }
+    }
+
+    // SOUL.md — single memory with personality/tone
+    let soul_path = workspace.join("SOUL.md");
+    if soul_path.exists() {
+        let content = std::fs::read_to_string(&soul_path)?;
+        let content = content.trim();
+        if content.len() >= 10 && !already_migrated(&conn, "openclaw:SOUL.md")? {
+            store_migrated_memory(
+                &conn, content, Some("agent"),
+                embedder.as_mut(),
+                &["migrated", "personality", "openclaw"],
+                "openclaw:SOUL.md",
+            )?;
+            total += 1;
+        }
+    }
+
+    // USER.md — single memory with user context
+    let user_path = workspace.join("USER.md");
+    if user_path.exists() {
+        let content = std::fs::read_to_string(&user_path)?;
+        let content = content.trim();
+        if content.len() >= 10 && !already_migrated(&conn, "openclaw:USER.md")? {
+            store_migrated_memory(
+                &conn, content, Some("user"),
+                embedder.as_mut(),
+                &["migrated", "user-profile", "openclaw"],
+                "openclaw:USER.md",
+            )?;
+            total += 1;
+        }
+    }
+
+    // AGENTS.md — chunk by ## sections (rules, workflows, conventions)
+    let agents_path = workspace.join("AGENTS.md");
+    if agents_path.exists() && !already_migrated(&conn, "openclaw:AGENTS.md")? {
+        let content = std::fs::read_to_string(&agents_path)?;
+        let mut section_title = String::new();
+        let mut buffer = String::new();
+
+        for line in content.lines() {
+            if line.starts_with("## ") {
+                if !buffer.trim().is_empty() && buffer.trim().len() >= 20 {
+                    let subject = if section_title.is_empty() {
+                        "agent:config".to_string()
+                    } else {
+                        format!("agent:config:{}", section_title.to_lowercase().replace(' ', "-"))
+                    };
+                    store_migrated_memory(
+                        &conn, buffer.trim(), Some(&subject),
+                        embedder.as_mut(),
+                        &["migrated", "agent-rules", "openclaw"],
+                        "openclaw:AGENTS.md",
+                    )?;
+                    total += 1;
+                }
+                buffer.clear();
+                section_title = line[3..].trim().to_string();
+                buffer.push_str(line);
+                buffer.push('\n');
+            } else {
+                buffer.push_str(line);
+                buffer.push('\n');
+            }
+        }
+        if !buffer.trim().is_empty() && buffer.trim().len() >= 20 {
+            let subject = if section_title.is_empty() {
+                "agent:config".to_string()
+            } else {
+                format!("agent:config:{}", section_title.to_lowercase().replace(' ', "-"))
+            };
+            store_migrated_memory(
+                &conn, buffer.trim(), Some(&subject),
+                embedder.as_mut(),
+                &["migrated", "agent-rules", "openclaw"],
+                "openclaw:AGENTS.md",
+            )?;
+            total += 1;
+        }
+    }
+
+    // MEMORY.md — existing chunked migration
+    let memory_path = workspace.join("MEMORY.md");
+    if memory_path.exists() {
+        let content = std::fs::read_to_string(&memory_path)?;
+        // Skip if it's already the stub we write after migration
+        if !content.contains("no longer the primary memory store") && content.lines().count() > 5 {
+            total += migrate_memory_md(&memory_path, cfg).await?;
+        }
+    }
+
+    Ok(total)
+}
+
+/// Check if we've already migrated from a given source
+fn already_migrated(conn: &rusqlite::Connection, source: &str) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE source = ?1 AND deleted = 0",
+        rusqlite::params![source],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
 /// Parse MEMORY.md sections and store each as a memory in ctxovrflw
 pub(crate) async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<usize> {
     let content = std::fs::read_to_string(path)?;
@@ -1304,6 +1445,8 @@ pub(crate) async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<u
                     &buffer,
                     current_subject.as_deref(),
                     embedder.as_mut(),
+                    &["migrated", "memory-md"],
+                    "openclaw:MEMORY.md",
                 )?;
                 count += 1;
             }
@@ -1318,6 +1461,8 @@ pub(crate) async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<u
                     &buffer,
                     current_subject.as_deref(),
                     embedder.as_mut(),
+                    &["migrated", "memory-md"],
+                    "openclaw:MEMORY.md",
                 )?;
                 count += 1;
             }
@@ -1336,6 +1481,8 @@ pub(crate) async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<u
                     &buffer,
                     current_subject.as_deref(),
                     embedder.as_mut(),
+                    &["migrated", "memory-md"],
+                    "openclaw:MEMORY.md",
                 )?;
                 count += 1;
                 buffer.clear();
@@ -1355,6 +1502,8 @@ pub(crate) async fn migrate_memory_md(path: &PathBuf, _cfg: &Config) -> Result<u
             &buffer,
             current_subject.as_deref(),
             embedder.as_mut(),
+            &["migrated", "memory-md"],
+            "openclaw:MEMORY.md",
         )?;
         count += 1;
     }
@@ -1367,16 +1516,16 @@ pub(crate) fn store_migrated_memory(
     content: &str,
     subject: Option<&str>,
     embedder: Option<&mut crate::embed::Embedder>,
+    tags: &[&str],
+    source: &str,
 ) -> Result<()> {
     let content = content.trim();
     if content.is_empty() || content.len() < 10 {
         return Ok(());
     }
 
-    // Generate embedding if we have an embedder
     let embedding = embedder.and_then(|e| e.embed(content).ok());
-
-    let tags = vec!["migrated".to_string(), "memory-md".to_string()];
+    let tags: Vec<String> = tags.iter().map(|t| t.to_string()).collect();
 
     crate::db::memories::store_with_expiry(
         conn,
@@ -1384,7 +1533,7 @@ pub(crate) fn store_migrated_memory(
         &crate::db::memories::MemoryType::Semantic,
         &tags,
         subject,
-        Some("openclaw:MEMORY.md"),
+        Some(source),
         embedding.as_deref(),
         None,
         None,
