@@ -1,14 +1,9 @@
 ---
 name: ctxovrflw
-description: >
-  Shared AI memory layer — recall context from past sessions and other AI tools,
-  store decisions and preferences automatically. Use when you need context about
-  user preferences, past decisions, project setup, or any information that may
-  have been discussed in another AI tool. Also use proactively to store important
-  context as it comes up. Cross-tool: what Cursor stores, Claude Code can recall.
+description: Shared AI memory layer — recall context from past sessions and other AI tools, store decisions and preferences automatically. Use when you need context aboutuser preferences, past decisions, project setup, or any information that may have been discussed in another AI tool. Also use proactively to store important context as it comes up. Cross-tool: what Cursor stores, Claude Code can recall.
 metadata:
   author: ctxovrflw
-  version: "2.0"
+  version: "0.5.1"
   website: https://ctxovrflw.dev
 compatibility: Requires ctxovrflw daemon running locally (MCP server on port 7437)
 ---
@@ -26,13 +21,49 @@ You interact with it via the MCP tools: `remember`, `recall`, `forget`, `status`
 This skill requires the **ctxovrflw daemon** running locally. If it's not installed or not running,
 **none of the MCP tools will work.**
 
+### Check if ctxovrflw installed
+
+```bash
+ctxovrflw --version
+```
+
 ### Check if running
 
 ```bash
-curl -s http://127.0.0.1:7437/health
-```
+ctxovrflw status
 
-If this returns a JSON response, ctxovrflw is running. If it fails, follow the install steps below.
+# If running, returns response like this:
+ctxovrflw v0.5.1
+
+Version:         v0.5.1
+Daemon:          running (systemd) ✓
+  REST API:      http://localhost:7437/v1/
+  MCP SSE:       http://localhost:7437/mcp/sse
+Service:         installed
+
+Tier:            Pro
+Memories:        64/unlimited
+Semantic search: enabled
+Cloud sync:      enabled
+
+Data dir:        /home/user/.ctxovrflw
+
+# If not running, returns response like this:
+ctxovrflw v0.5.1
+
+Version:         v0.5.1
+Daemon:          stopped # Notice the "stopped" status
+Service:         installed
+
+Tier:            Pro
+Memories:        64/unlimited
+Semantic search: enabled
+Cloud sync:      enabled
+
+Data dir:        /home/max/.ctxovrflw
+
+💡 Start daemon: ctxovrflw start
+```
 
 ### Install ctxovrflw
 
@@ -48,6 +79,7 @@ This installs the daemon binary, ONNX runtime (for semantic search), and the emb
 Supports Windows (x64), Linux (x64, arm64), and macOS (x64, arm64).
 
 After install:
+
 ```bash
 ctxovrflw init -y  # Non-interactive setup — auto-configures everything, starts daemon
 ctxovrflw login    # Authenticate with cloud (optional, needed for sync)
@@ -58,6 +90,7 @@ detects and configures all AI tools, installs agent rules, sets up the systemd s
 and starts the daemon — all without prompting. Ideal for agents and scripts.
 
 For interactive setup with a TUI, omit the flag:
+
 ```bash
 ctxovrflw init     # Interactive TUI with step-by-step wizard
 ```
@@ -73,16 +106,16 @@ ctxovrflw update   # Downloads and installs the latest version
 
 ## Tiers & Pricing
 
-| Feature | Free ($0) | Standard ($10/mo) | Pro ($20/mo) |
-|---------|-----------|-------------------|--------------|
-| Memories | 100 | Unlimited | Unlimited |
-| Devices | 1 | 3 | Unlimited |
-| Semantic search | ✅ | ✅ | ✅ |
-| Cloud sync (E2E encrypted) | ❌ | ✅ | ✅ |
-| Context synthesis | ❌ | ❌ | ✅ |
-| Consolidation | ❌ | ❌ | ✅ |
-| Knowledge graph | ❌ | ❌ | ✅ |
-| Webhooks | ✅ | ✅ | ✅ |
+| Feature                    | Free ($0) | Standard ($10/mo) | Pro ($20/mo) |
+| -------------------------- | --------- | ----------------- | ------------ |
+| Memories                   | 100       | Unlimited         | Unlimited    |
+| Devices                    | 1         | 3                 | Unlimited    |
+| Semantic search            | ✅        | ✅                | ✅           |
+| Cloud sync (E2E encrypted) | ❌        | ✅                | ✅           |
+| Context synthesis          | ❌        | ❌                | ✅           |
+| Consolidation              | ❌        | ❌                | ✅           |
+| Knowledge graph            | ❌        | ❌                | ✅           |
+| Webhooks                   | ✅        | ✅                | ✅           |
 
 ### How to Subscribe
 
@@ -92,15 +125,18 @@ After subscribing, run `ctxovrflw account` to sync the tier locally.
 
 **For agents (x402 crypto payments):**
 Agents can subscribe programmatically via USDC on Base:
+
 ```
 POST https://api.ctxovrflw.dev/v1/agent/subscribe/standard
 POST https://api.ctxovrflw.dev/v1/agent/subscribe/pro
 ```
+
 These endpoints use the x402 payment protocol. The agent pays with USDC and receives an API key.
 Subscriptions last 30 days and auto-downgrade on expiry.
 
 **Check current tier:**
 Use the `status` MCP tool, or:
+
 ```bash
 ctxovrflw account   # Shows tier, usage, sync status
 ctxovrflw status    # Quick daemon status
@@ -161,6 +197,7 @@ remember("Sarah handles the backend deployment", subject: "person:sarah", type: 
 ```
 
 Then recall scoped to a subject:
+
 ```
 recall("", subject: "user")           // everything about the user
 recall("preferences", subject: "user") // user preferences only
@@ -206,6 +243,7 @@ Available events: `memory.created`, `memory.updated`, `memory.deleted`, `memory.
 ## Token Budgets
 
 Control context window usage with `max_tokens`:
+
 ```
 recall("project setup", max_tokens: 2000)  // fit within 2K tokens
 ```
@@ -229,6 +267,7 @@ not an external API. There is zero cost to recalling. When in doubt, recall. Bet
 find nothing than to miss context that exists.
 
 **Recall aggressively:**
+
 - At the start of every session (broad query)
 - Before making any suggestion or recommendation
 - When you're about to do something you've done before
@@ -249,6 +288,7 @@ remember("User corrected: don't use X, use Y instead because Z",
 ```
 
 **Examples of corrections to store:**
+
 - "No, we use pnpm not npm" → remember the package manager preference
 - "That's wrong, the API is at /v2 not /v1" → remember the correct endpoint
 - "Don't suggest that approach, it doesn't work because..." → remember the constraint
@@ -260,22 +300,24 @@ remember("User corrected: don't use X, use Y instead because Z",
 Corrections tagged with `correction` can be recalled later to avoid repeating the same mistake.
 
 **If the user says "I already told you"** — that means you failed to recall. Immediately:
+
 1. `recall` the topic to find what you missed
 2. `remember` the correction with `tags: ["correction"]`
 3. Apologize briefly and move on with the right information
 
 ## Memory Types
 
-| Type | Use for | Example |
-|------|---------|---------|
-| `preference` | User likes, config choices, style | "Prefers Rust for backend services" |
-| `semantic` | Facts, knowledge, project info | "The API uses PostgreSQL with pgvector" |
-| `procedural` | How-to, steps, processes | "To deploy: push to main, Railway auto-deploys" |
-| `episodic` | Events, things that happened | "Migrated from Fly.io to Railway on Feb 10" |
+| Type         | Use for                           | Example                                         |
+| ------------ | --------------------------------- | ----------------------------------------------- |
+| `preference` | User likes, config choices, style | "Prefers Rust for backend services"             |
+| `semantic`   | Facts, knowledge, project info    | "The API uses PostgreSQL with pgvector"         |
+| `procedural` | How-to, steps, processes          | "To deploy: push to main, Railway auto-deploys" |
+| `episodic`   | Events, things that happened      | "Migrated from Fly.io to Railway on Feb 10"     |
 
 ## Tag Conventions
 
 Use namespaced tags for organization:
+
 - `project:ctxovrflw` — project name
 - `lang:rust` — programming language
 - `infra:railway` — infrastructure/hosting
@@ -286,11 +328,15 @@ Use namespaced tags for organization:
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| MCP tools not working | Check daemon: `curl http://127.0.0.1:7437/health` |
-| "Not logged in" | Run `ctxovrflw login` |
-| "Memory limit reached" | Upgrade tier or `forget` old memories |
-| "Sync PIN expired" | Run `ctxovrflw login` to re-enter PIN |
-| Slow semantic search | First query loads ONNX model (~2s), subsequent queries are fast |
-| Cloud sync not working | Check tier with `ctxovrflw account` — Free tier is local-only |
+| Problem                | Solution                                                        |
+| ---------------------- | --------------------------------------------------------------- |
+| MCP tools not working  | Check daemon: `curl http://127.0.0.1:7437/health`               |
+| "Not logged in"        | Run `ctxovrflw login`                                           |
+| "Memory limit reached" | Upgrade tier or `forget` old memories                           |
+| "Sync PIN expired"     | Run `ctxovrflw login` to re-enter PIN                           |
+| Slow semantic search   | First query loads ONNX model (~2s), subsequent queries are fast |
+| Cloud sync not working | Check tier with `ctxovrflw account` — Free tier is local-only   |
+
+## Usage of CLI instead of MCP
+
+You can use the CLI tools instead of the MCP tools. The CLI tools offer the same functionality as the MCP tools, and can be called in scripts or from other CLI tools.
