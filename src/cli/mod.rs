@@ -1,5 +1,6 @@
 pub mod account;
 pub mod forget;
+#[cfg(feature = "pro")]
 pub mod graph;
 pub mod init;
 pub mod init_auto;
@@ -91,7 +92,8 @@ pub enum Command {
     /// Browse, search, and manage memories in an interactive TUI
     Memories,
 
-    /// Knowledge graph commands
+    /// Knowledge graph commands (Pro)
+    #[cfg(feature = "pro")]
     Graph {
         #[command(subcommand)]
         action: GraphAction,
@@ -143,6 +145,7 @@ pub enum Command {
     Mcp,
 }
 
+#[cfg(feature = "pro")]
 #[derive(Subcommand)]
 pub enum GraphAction {
     /// Build knowledge graph from existing memories (extracts entities from subjects and tags)

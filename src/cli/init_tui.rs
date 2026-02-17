@@ -108,9 +108,11 @@ enum FlowState {
     DetectingTools,
     SelectingTools,
     InstallingTools,
-    ConfirmOverwrite,
+    SelectOverwrites,
     AskRules,
     InstallingRules,
+    OpenClawMenu,
+    InstallingOpenClawPlugin,
     OpenClawIntegration,
     AskOpenClawMigrate,
     RunOpenClawMigrate,
@@ -131,6 +133,7 @@ enum FlowState {
 enum AsyncMsg {
     ModelDownloaded(Result<()>),
     ConnectResult(Result<bool>),
+    OpenClawPluginInstalled(Result<()>),
 }
 
 // ── App ─────────────────────────────────────────────────────
@@ -162,6 +165,7 @@ struct App {
     install_queue: Vec<usize>,
     service_installed: bool,
     service_running: bool,
+    openclaw_menu_choice: usize,
 }
 
 impl App {
@@ -190,6 +194,7 @@ impl App {
             install_queue: Vec::new(),
             service_installed: false,
             service_running: false,
+            openclaw_menu_choice: 0,
         }
     }
 
@@ -407,38 +412,41 @@ impl App {
             self.tools_installed.push(name.to_string());
         }
 
-        // If there are overwrite prompts, ask one by one
+        // If there are overwrite prompts, show batch selection
         if !self.pending_overwrites.is_empty() {
-            self.ask_next_overwrite();
+            self.show_overwrite_selection();
             return;
         }
 
         self.finish_tool_install();
     }
 
-    fn ask_next_overwrite(&mut self) {
-        if let Some((idx, _path)) = self.pending_overwrites.first() {
-            let name = self.detected_agents[*idx].def.name;
-            self.interaction = Interaction::Confirm {
-                prompt: format!("{name} already configured — overwrite?"),
-                default: false,
-            };
-            self.flow = FlowState::ConfirmOverwrite;
-        } else {
+    fn show_overwrite_selection(&mut self) {
+        if self.pending_overwrites.is_empty() {
             self.finish_tool_install();
+            return;
         }
+
+        self.lines.push(LogLine::blank());
+        self.lines.push(LogLine::header("Existing configurations found"));
+        self.lines.push(LogLine::info("Deselect any you want to keep unchanged:"));
+
+        let items: Vec<(String, bool)> = self.pending_overwrites
+            .iter()
+            .map(|(idx, path)| {
+                let name = self.detected_agents[*idx].def.name;
+                (format!("{name} → {}", path.display()), true)
+            })
+            .collect();
+
+        self.interaction = Interaction::Checkbox { items, cursor: 0 };
+        self.flow = FlowState::SelectOverwrites;
     }
 
     fn finish_tool_install(&mut self) {
         let url = init::mcp_sse_url(&self.cfg);
         self.lines.push(LogLine::blank());
         self.lines.push(LogLine::info(format!("Tools connect via {url}")));
-
-        // Install agent skill
-        match init::install_agent_skill() {
-            Ok(_) => self.lines.push(LogLine::ok("Agent Skill installed")),
-            Err(e) => self.lines.push(LogLine::err(format!("Skill install: {e}"))),
-        }
 
         // Check if we have rules-capable agents
         self.has_rules_agents = self.selected_tools.iter().any(|&idx| {
@@ -520,17 +528,76 @@ impl App {
         self.lines.push(LogLine::header("🐾 OpenClaw Integration"));
         self.lines.push(LogLine::blank());
 
-        let home = dirs::home_dir().unwrap_or_default();
-        let workspace = home.join(".openclaw/workspace");
-        let agents_md = workspace.join("AGENTS.md");
+        self.interaction = Interaction::Menu {
+            title: "How to integrate ctxovrflw with OpenClaw?".into(),
+            items: vec![
+                "Plugin + Skill + Agent Rules (recommended)".into(),
+                "Plugin only".into(),
+                "Skill + Agent Rules only".into(),
+                "Skip OpenClaw integration".into(),
+            ],
+            cursor: 0,
+        };
+        self.flow = FlowState::OpenClawMenu;
+    }
+
+    fn run_openclaw_plugin_install(&mut self) {
+        self.interaction = Interaction::Spinner {
+            message: "Installing OpenClaw plugin...".into(),
+        };
+        self.flow = FlowState::InstallingOpenClawPlugin;
+
+        let tx = self.async_tx.clone();
+        std::thread::spawn(move || {
+            let result = (|| -> Result<()> {
+                // Install plugin
+                let output = std::process::Command::new("openclaw")
+                    .args(["plugins", "install", "@ctxovrflw/memory-ctxovrflw"])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .output()?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    anyhow::bail!("Plugin install failed: {}", stderr.trim());
+                }
+
+                // Restart gateway
+                let output = std::process::Command::new("openclaw")
+                    .args(["gateway", "restart"])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .output()?;
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    anyhow::bail!("Gateway restart failed: {}", stderr.trim());
+                }
+
+                Ok(())
+            })();
+            let _ = tx.send(AsyncMsg::OpenClawPluginInstalled(result));
+        });
+    }
+
+    fn run_openclaw_skill_and_rules(&mut self) {
+        // Install agent skill
+        match init::install_agent_skill() {
+            Ok(_) => self.lines.push(LogLine::ok("Agent Skill installed")),
+            Err(e) => self.lines.push(LogLine::err(format!("Skill install: {e}"))),
+        }
 
         // Inject AGENTS.md
+        let home = dirs::home_dir().unwrap_or_default();
+        let agents_md = home.join(".openclaw/workspace/AGENTS.md");
         match init::inject_openclaw_agents_md(&agents_md) {
             Ok(_) => self.lines.push(LogLine::ok("AGENTS.md — ctxovrflw memory section injected")),
             Err(e) => self.lines.push(LogLine::err(format!("AGENTS.md: {e}"))),
         }
+    }
 
-        // Check for MEMORY.md
+    fn finish_openclaw_integration(&mut self) {
+        // Check for MEMORY.md migration
+        let home = dirs::home_dir().unwrap_or_default();
+        let workspace = home.join(".openclaw/workspace");
         let memory_md = workspace.join("MEMORY.md");
         if memory_md.exists() {
             let lines = std::fs::read_to_string(&memory_md)
@@ -547,6 +614,7 @@ impl App {
             }
         }
 
+        self.lines.push(LogLine::ok("OpenClaw integration complete"));
         self.complete_step();
         self.flow = FlowState::DaemonMenu;
         self.advance();
@@ -672,23 +740,53 @@ impl App {
                         items[*cursor].1 = !items[*cursor].1;
                     }
                     KeyCode::Enter => {
-                        // Collect selections
-                        self.selected_tools = items.iter().enumerate()
-                            .filter(|(_, (_, sel))| *sel)
-                            .map(|(i, _)| i)
-                            .collect();
+                        match self.flow {
+                            FlowState::SelectOverwrites => {
+                                // Process batch overwrite selections
+                                let selections: Vec<bool> = items.iter().map(|(_, sel)| *sel).collect();
+                                let mcp_entry = init::sse_mcp_json(&self.cfg);
+                                let overwrites = self.pending_overwrites.clone();
+                                self.interaction = Interaction::None;
 
-                        if self.selected_tools.is_empty() {
-                            self.lines.push(LogLine::info("No tools selected"));
-                            self.complete_step();
-                            self.flow = FlowState::DaemonMenu;
-                            self.advance();
-                        } else {
-                            self.lines.push(LogLine::blank());
-                            self.lines.push(LogLine::header("Configuring tools..."));
-                            self.lines.push(LogLine::blank());
-                            self.flow = FlowState::InstallingTools;
-                            self.advance();
+                                for (i, (idx, config_path)) in overwrites.iter().enumerate() {
+                                    let name = self.detected_agents[*idx].def.name;
+                                    if selections[i] {
+                                        match write_mcp_config_quiet(config_path, &mcp_entry) {
+                                            Ok(_) => {
+                                                self.lines.push(LogLine::ok(format!(
+                                                    "{name} → {} (overwritten)", config_path.display()
+                                                )));
+                                                self.tools_installed.push(name.to_string());
+                                            }
+                                            Err(e) => self.lines.push(LogLine::err(format!("{name}: {e}"))),
+                                        }
+                                    } else {
+                                        self.lines.push(LogLine::info(format!("{name} — kept existing")));
+                                    }
+                                }
+                                self.pending_overwrites.clear();
+                                self.finish_tool_install();
+                            }
+                            _ => {
+                                // Tool selection (SelectingTools)
+                                self.selected_tools = items.iter().enumerate()
+                                    .filter(|(_, (_, sel))| *sel)
+                                    .map(|(i, _)| i)
+                                    .collect();
+
+                                if self.selected_tools.is_empty() {
+                                    self.lines.push(LogLine::info("No tools selected"));
+                                    self.complete_step();
+                                    self.flow = FlowState::DaemonMenu;
+                                    self.advance();
+                                } else {
+                                    self.lines.push(LogLine::blank());
+                                    self.lines.push(LogLine::header("Configuring tools..."));
+                                    self.lines.push(LogLine::blank());
+                                    self.flow = FlowState::InstallingTools;
+                                    self.advance();
+                                }
+                            }
                         }
                     }
                     _ => {}
@@ -708,6 +806,32 @@ impl App {
                         self.interaction = Interaction::None;
 
                         match self.flow {
+                            FlowState::OpenClawMenu => {
+                                self.openclaw_menu_choice = choice;
+                                match choice {
+                                    0 => {
+                                        // Plugin + Skill + Agent Rules
+                                        self.run_openclaw_skill_and_rules();
+                                        self.run_openclaw_plugin_install();
+                                    }
+                                    1 => {
+                                        // Plugin only
+                                        self.run_openclaw_plugin_install();
+                                    }
+                                    2 => {
+                                        // Skill + Agent Rules only
+                                        self.run_openclaw_skill_and_rules();
+                                        self.finish_openclaw_integration();
+                                    }
+                                    _ => {
+                                        // Skip
+                                        self.lines.push(LogLine::info("Skipped OpenClaw integration"));
+                                        self.complete_step();
+                                        self.flow = FlowState::DaemonMenu;
+                                        self.advance();
+                                    }
+                                }
+                            }
                             FlowState::DaemonMenu => {
                                 match choice {
                                     0 => {
@@ -810,25 +934,6 @@ impl App {
         self.interaction = Interaction::None;
 
         match self.flow {
-            FlowState::ConfirmOverwrite => {
-                let (idx, config_path) = self.pending_overwrites.remove(0);
-                let name = self.detected_agents[idx].def.name;
-                if yes {
-                    let mcp_entry = init::sse_mcp_json(&self.cfg);
-                    match write_mcp_config_quiet(&config_path, &mcp_entry) {
-                        Ok(_) => {
-                            self.lines.push(LogLine::ok(format!(
-                                "{name} → {} (overwritten)", config_path.display()
-                            )));
-                            self.tools_installed.push(name.to_string());
-                        }
-                        Err(e) => self.lines.push(LogLine::err(format!("{name}: {e}"))),
-                    }
-                } else {
-                    self.lines.push(LogLine::info(format!("{name} — skipped")));
-                }
-                self.ask_next_overwrite();
-            }
             FlowState::AskRules => {
                 if yes {
                     self.flow = FlowState::InstallingRules;
@@ -970,6 +1075,22 @@ impl App {
                     self.complete_step();
                     self.flow = FlowState::DetectingTools;
                     self.advance();
+                }
+                AsyncMsg::OpenClawPluginInstalled(result) => {
+                    self.interaction = Interaction::None;
+                    match result {
+                        Ok(_) => {
+                            self.lines.push(LogLine::ok("OpenClaw plugin installed"));
+                            self.lines.push(LogLine::ok("Gateway restarted"));
+                        }
+                        Err(e) => {
+                            self.lines.push(LogLine::err(format!("Plugin install: {e}")));
+                            self.lines.push(LogLine::info(
+                                "Run manually: openclaw plugins install @ctxovrflw/memory-ctxovrflw && openclaw gateway restart"
+                            ));
+                        }
+                    }
+                    self.finish_openclaw_integration();
                 }
                 AsyncMsg::ConnectResult(result) => {
                     self.interaction = Interaction::None;
