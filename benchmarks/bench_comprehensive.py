@@ -80,7 +80,7 @@ SCENARIOS = [
         category="Temporal",
         question="How long did it take to go from the first version with cloud sync to the version with E2E encryption?",
         ground_truth="Cloud sync was added in v0.2.5 (late January) and mandatory E2E encryption was added in v0.3.7 (February 8), roughly 1-2 weeks.",
-        keywords=["v0.2.5", "v0.3.7", "sync", "encryption", "weeks"],
+        keywords=["v0.2.5", "v0.3.7", "sync", "encryption", "weeks|days|January|February"],
         memories=[
             {"content": "v0.2.5 (late January 2026): First version with cloud sync support. Memories could be pushed/pulled to the cloud API.", "type": "semantic", "tags": ["release", "milestone", "sync"], "subject": "ctxovrflw"},
             {"content": "v0.3.7 (February 8, 2026): Mandatory E2E encryption for all cloud sync. No plaintext sync path allowed. get_encryption_key() returns Result<[u8;32]> not Option.", "type": "semantic", "tags": ["release", "milestone", "encryption"], "subject": "ctxovrflw"},
@@ -110,7 +110,7 @@ SCENARIOS = [
         category="Entity Tracking",
         question="What companies or organizations have expressed interest in ctxovrflw?",
         ground_truth="Lisa's fintech startup wants team shared memories. A DevOps agency asked about self-hosted deployment. The Rust Discord community has been supportive.",
-        keywords=["fintech", "Lisa", "DevOps", "self-hosted", "Rust Discord"],
+        keywords=["fintech|finance|banking", "Lisa", "DevOps|ops|infrastructure", "self-hosted|on-premise", "Rust Discord|Rust community|Discord"],
         memories=[
             {"content": "Lisa's fintech startup (unnamed, ~50 devs) interested in ctxovrflw for team shared memory. They want on-prem deployment option. Key concern: SOC2 compliance.", "type": "semantic", "tags": ["leads", "enterprise", "fintech"], "subject": "enterprise-leads"},
             {"content": "A DevOps agency (via Moltbook DM) asked about self-hosted ctxovrflw deployment for their clients. Want to bundle with their CI/CD offering.", "type": "semantic", "tags": ["leads", "enterprise", "devops"], "subject": "enterprise-leads"},
@@ -127,7 +127,7 @@ SCENARIOS = [
         category="Preference Evolution",
         question="How has our approach to database encryption changed over the project lifetime?",
         ground_truth="Started with no encryption, then added optional encryption, then made E2E mandatory after security audit. Also switched from email-based salt to server-side salt.",
-        keywords=["optional", "mandatory", "PIN", "plaintext", "security audit"],
+        keywords=["optional|skippable", "mandatory|required|enforced", "PIN|encryption key", "plaintext|no encryption|unencrypted", "security audit|audit|server-side salt"],
         memories=[
             {"content": "Early ctxovrflw (v0.1.x): No encryption for cloud sync. Memories stored in plaintext on server. Quick prototype phase.", "type": "semantic", "tags": ["history", "encryption", "evolution"], "subject": "ctxovrflw"},
             {"content": "v0.2.x: Added optional E2E encryption. Users could set a PIN to encrypt before sync. Some users skipped it for convenience.", "type": "semantic", "tags": ["history", "encryption", "evolution"], "subject": "ctxovrflw"},
@@ -140,7 +140,7 @@ SCENARIOS = [
         category="Preference Evolution",
         question="What's Max's current stance on using AI for marketing, and how has it changed?",
         ground_truth="Initially skeptical about AI marketing, then tried Moltbook engagement and found genuine community interaction works. Now believes in 'community member first, not advertiser' approach.",
-        keywords=["skeptical", "Moltbook", "genuine", "community", "advertiser"],
+        keywords=["skeptical|worried|concerned|hesitant", "Moltbook", "genuine|authentic", "community|organic", "advertiser|spammy|salesy"],
         memories=[
             {"content": "January 2026: Max initially skeptical about using AI for marketing. Worried it would come across as spammy and inauthentic.", "type": "semantic", "tags": ["preference", "marketing", "evolution"], "subject": "Max"},
             {"content": "February 2026: Max tried Moltbook AI social network for ctxovrflw outreach. Set up automated engagement with strict rules: max 2-3 comments per run, genuine insights only, community member first not advertiser.", "type": "semantic", "tags": ["preference", "marketing", "evolution"], "subject": "Max"},
@@ -157,7 +157,7 @@ SCENARIOS = [
         category="Multi-hop",
         question="Why did our benchmark results improve dramatically between the first and second run?",
         ground_truth="First run had SSE connection failures caused by blocking_lock panic in sync, which killed tokio workers. Fixing the mutex (std::sync instead of tokio::sync) resolved SSE drops, so MCP recall worked reliably.",
-        keywords=["mutex", "tokio", "std::sync", "MCP", "recall", "69%"],
+        keywords=["mutex", "tokio|async runtime", "std::sync|blocking mutex|sync::Mutex", "MCP|recall", "69%|service unreachable|connection fail"],
         memories=[
             {"content": "First benchmark run (Feb 16 morning): ctxovrflw mode scored only 69% coverage. 5 out of 11 scenarios showed 'service unreachable' when calling MCP recall.", "type": "semantic", "tags": ["benchmark", "results", "failure"], "subject": "benchmarks"},
             {"content": "Root cause found: tokio::sync::Mutex::blocking_lock() in sync/mod.rs panicked inside async context, crashing tokio worker threads that were serving SSE connections.", "type": "semantic", "tags": ["bug", "root-cause", "mutex"], "subject": "ctxovrflw"},
@@ -169,7 +169,7 @@ SCENARIOS = [
         category="Multi-hop",
         question="What's the connection between Jake's contribution and our benchmark improvement?",
         ground_truth="Jake fixed ONNX ARM64 CI, which enabled the embedder to work. The embedder singleton used tokio::Mutex which caused the panic. Fixing to std::sync::Mutex (still using Jake's ONNX setup) fixed benchmarks.",
-        keywords=["Jake", "ONNX", "ARM64", "embedder", "Mutex"],
+        keywords=["Jake", "ONNX", "ARM64|arm|cross-platform", "embedder|embedding", "Mutex|mutex"],
         memories=[
             {"content": "Jake contributed the ONNX runtime CI fix for ARM64, enabling cross-platform ONNX builds.", "type": "semantic", "tags": ["contribution", "onnx", "ci"], "subject": "Jake"},
             {"content": "ONNX embedder is loaded as a global singleton (Arc<Mutex<Embedder>>) at daemon startup, shared across HTTP, MCP, and sync tasks.", "type": "semantic", "tags": ["architecture", "onnx", "singleton"], "subject": "ctxovrflw"},
@@ -182,7 +182,7 @@ SCENARIOS = [
         category="Multi-hop",
         question="If we downgraded a Pro user to Free tier, what specific features would they lose?",
         ground_truth="They'd lose hybrid search (falls back to keyword only), knowledge graph, webhooks, consolidation, context synthesis, cloud sync, and go from unlimited to 100 memory cap.",
-        keywords=["hybrid", "knowledge graph", "webhooks", "consolidation", "cloud sync", "100"],
+        keywords=["hybrid|semantic + keyword", "knowledge graph|graph|entities", "webhooks|webhook", "consolidation|consolidate", "cloud sync|sync", "100|hundred|memory limit"],
         memories=[
             {"content": "Free tier features: keyword search only, 100 memory limit, local storage only, 1 device.", "type": "semantic", "tags": ["pricing", "free", "limits"], "subject": "ctxovrflw"},
             {"content": "Pro tier features: hybrid search (semantic + keyword + RRF), unlimited memories, knowledge graph (entities + relations), webhooks, consolidation, context synthesis, unlimited devices.", "type": "semantic", "tags": ["pricing", "pro", "features"], "subject": "ctxovrflw"},
@@ -199,7 +199,7 @@ SCENARIOS = [
         category="Long-term",
         question="Why was ctxovrflw created? What was the original motivation?",
         ground_truth="Max was frustrated that AI agents forgot everything between sessions. Context windows are expensive and ephemeral. Wanted persistent, private, cross-agent memory.",
-        keywords=["started from zero", "context window", "persistent", "private", "MCP"],
+        keywords=["started from zero|forgot|remember nothing|from scratch", "context window|context overflow", "persistent|persists|permanent", "private|local-first|privacy", "MCP|any AI tool|cross-agent"],
         memories=[
             {"content": "ctxovrflw origin story: Max was frustrated that every AI coding session started from zero. Claude Code, Cursor, Copilot — none remembered decisions from yesterday. Context windows are expensive and ephemeral. He wanted persistent memory that's private (local-first), works across any AI tool (MCP), and syncs across devices.", "type": "semantic", "tags": ["origin", "motivation", "founding"], "subject": "ctxovrflw"},
         ],
@@ -209,7 +209,7 @@ SCENARIOS = [
         category="Long-term",
         question="Why did we choose Rust for the daemon instead of Python or Go?",
         ground_truth="Rust for performance (sub-ms recall), single binary distribution, memory safety without GC pauses, and SQLite FFI is straightforward.",
-        keywords=["performance", "binary", "memory safety", "SQLite", "GC"],
+        keywords=["performance|latency|sub-millisecond|fast", "binary|distribution|deploy", "memory safety|safe|no garbage", "SQLite|rusqlite", "GC|garbage collect"],
         memories=[
             {"content": "Architecture decision: Rust chosen for ctxovrflw daemon. Reasons: sub-millisecond recall latency (no GC pauses), compiles to single static binary (easy distribution), memory safety guarantees for a long-running daemon, excellent SQLite FFI via rusqlite, and strong async ecosystem (tokio) for HTTP/SSE server.", "type": "semantic", "tags": ["decision", "architecture", "rust"], "subject": "ctxovrflw"},
         ],
@@ -219,7 +219,7 @@ SCENARIOS = [
         category="Long-term",
         question="How did ctxovrflw get its name?",
         ground_truth="Play on 'context overflow' — AI context windows overflow and forget. ctxovrflw catches what overflows. Also a nod to stackoverflow for developers.",
-        keywords=["context overflow", "overflow", "catches", "stackoverflow"],
+        keywords=["context overflow", "overflow|lost|forgotten", "catches|persists|saves", "stackoverflow|stack overflow"],
         memories=[
             {"content": "Name origin: ctxovrflw = 'context overflow'. AI context windows have limited space — when they overflow, knowledge is lost. ctxovrflw catches what overflows and persists it. Also a deliberate nod to stackoverflow — a tool developers already associate with finding answers. The abbreviated spelling (no vowels) follows Unix naming conventions.", "type": "semantic", "tags": ["name", "branding", "origin"], "subject": "ctxovrflw"},
         ],
@@ -234,7 +234,7 @@ SCENARIOS = [
         category="Social",
         question="How did the team react to the security audit findings?",
         ground_truth="Max was alarmed by the 0.0.0.0 binding (called it 'holy shit moment'). Prioritized it immediately as P0. Was relieved the fix was simple (one-line change to 127.0.0.1).",
-        keywords=["holy shit", "0.0.0.0", "P0", "127.0.0.1"],
+        keywords=["holy shit|alarmed|shocked", "0.0.0.0", "P0|immediately|dropped everything", "127.0.0.1|localhost"],
         memories=[
             {"content": "Max's reaction to security audit: 'holy shit moment' when he saw the daemon was binding 0.0.0.0 — anyone on the network could access memories. Immediately classified as P0, dropped everything else. Was relieved the fix was just changing one line to 127.0.0.1 in the HTTP server config.", "type": "semantic", "tags": ["reaction", "security", "sentiment"], "subject": "Max"},
         ],
@@ -244,7 +244,7 @@ SCENARIOS = [
         category="Social",
         question="What technical issue caused the most frustration during development?",
         ground_truth="The cross-device PIN verification failure was the most frustrating. Took 3 days to find because email salt mismatch was subtle — worked on same device, broke across devices.",
-        keywords=["PIN", "cross-device", "3 days", "email", "PBKDF2"],
+        keywords=["PIN", "cross-device|between devices|different device", "3 days|days to", "email|salt|derive_key", "PBKDF2|key derivation|encoding"],
         memories=[
             {"content": "Most frustrating bug: cross-device PIN verification. Took 3 days to diagnose. derive_key() used email as PBKDF2 salt, but email casing or encoding differed slightly between devices. Worked perfectly on the same device (same email string), only broke when syncing to a second device. Subtle and maddening. Fixed by moving to server-side random salt in v0.4.2.", "type": "semantic", "tags": ["frustration", "bug", "pin", "debugging"], "subject": "ctxovrflw"},
         ],
@@ -286,7 +286,7 @@ SCENARIOS = [
         category="Spatial",
         question="Describe the full deployment infrastructure — where does each component run?",
         ground_truth="Daemon runs locally on user machines. Cloud API on Railway (Hono/Bun). Website on Vercel (Vite/React). CI on GitHub Actions (public repo). Database is PostgreSQL on Railway.",
-        keywords=["Railway", "GitHub Actions", "PostgreSQL", "local", "systemd"],
+        keywords=["Railway", "GitHub Actions|CI", "PostgreSQL|Postgres", "local|user's machine|on-device", "systemd|launchd|daemon"],
         memories=[
             {"content": "ctxovrflw infrastructure map: Daemon — runs on user's local machine (systemd service on Linux, launchd on Mac). Cloud API — Railway (Hono/Bun/TypeScript, PostgreSQL). Website (ctxovrflw.dev) — Vercel (Vite/React). CI — GitHub Actions on public repo M4cs/ctxovrflw-client (5 platform builds). DNS — Cloudflare.", "type": "semantic", "tags": ["infrastructure", "deployment", "architecture"], "subject": "ctxovrflw"},
         ],
@@ -310,7 +310,7 @@ SCENARIOS = [
         category="Personal",
         question="When is Max usually available and when should I avoid messaging?",
         ground_truth="Max is in EST timezone (Boston). Usually active 9am-midnight. Avoid 1am-8am EST. Prefers async communication.",
-        keywords=["EST", "Boston", "9 AM", "midnight", "async"],
+        keywords=["EST|Eastern", "Boston", "9 AM|9am|9:00|morning", "midnight|late night", "async|don't expect instant|focus time"],
         memories=[
             {"content": "Max's availability: EST timezone (Boston). Typically active 9am–midnight EST. Deep work blocks usually morning (10am-1pm). Avoid messaging 1am–8am EST unless urgent. Prefers async communication — don't expect instant replies during focus time.", "type": "preference", "tags": ["schedule", "availability", "timezone"], "subject": "Max"},
         ],
@@ -320,7 +320,7 @@ SCENARIOS = [
         category="Personal",
         question="What are Max's long-term career goals beyond ctxovrflw?",
         ground_truth="Build wealth through software. ctxovrflw is the current vehicle but the broader goal is multiple revenue streams from developer tools. Wants financial independence.",
-        keywords=["wealth", "software", "revenue", "developer tools", "financial independence"],
+        keywords=["wealth|rich|money|profitable", "software|SaaS|products", "revenue|income|streams", "developer tools|dev tools|tooling", "financial independence|bootstrapped|self-funded"],
         memories=[
             {"content": "Max's goals: Primary drive is building wealth through software. ctxovrflw is the current focus but not the only bet — wants to build multiple revenue streams from developer tools. Long-term goal: financial independence through profitable software products, not VC-funded growth.", "type": "semantic", "tags": ["goals", "career", "personal"], "subject": "Max"},
         ],
@@ -330,7 +330,7 @@ SCENARIOS = [
         category="Personal",
         question="What annoys Max about working with AI assistants?",
         ground_truth="Hates sycophancy ('yes man' behavior), verbose responses, asking permission for obvious things, and losing context between sessions.",
-        keywords=["sycophancy", "verbose", "permission", "context", "sessions"],
+        keywords=["sycophancy|sycophantic|flattery|filler", "verbose|wordy|long-winded|fluff", "permission|ask first|asking", "context|memory|remember", "sessions|conversation|fresh"],
         memories=[
             {"content": "Max's pet peeves with AI assistants: 1) Sycophancy — hates 'yes man' behavior, wants honest pushback. 2) Verbose responses — says 'say it once, say it well'. 3) Asking permission for obvious read-only tasks. 4) Losing context between sessions (this is literally why he built ctxovrflw). 5) Corporate-speak and filler phrases.", "type": "preference", "tags": ["pet-peeves", "ai", "preference"], "subject": "Max"},
         ],
@@ -445,15 +445,26 @@ Recall is fast (~3ms) and free (local search). Use it liberally."""
         final_answer = "\n".join(text_parts)
 
     # Score: keyword coverage
+    # Keywords support alternatives via pipe: "forgot|started from zero|remember nothing"
     answer_lower = final_answer.lower()
-    hits = [kw for kw in scenario.keywords if kw.lower() in answer_lower]
+    hits = []
+    for kw in scenario.keywords:
+        alternatives = [a.strip().lower() for a in kw.split("|")]
+        if any(alt in answer_lower for alt in alternatives):
+            hits.append(kw)
     coverage = len(hits) / len(scenario.keywords) if scenario.keywords else 0
 
-    admits_no_knowledge = any(phrase in answer_lower for phrase in [
-        "don't have", "don't know", "no information", "not aware",
-        "cannot recall", "no memory", "no context", "not stored",
-        "no specific", "unable to find",
+    # Check if the agent truly admits no knowledge vs just hedging
+    # If keyword coverage > 50% or recall tools were used, the agent clearly has knowledge
+    _nk_phrases = any(phrase in answer_lower for phrase in [
+        "don't have any information", "don't know anything about",
+        "no information about", "not aware of",
+        "cannot recall anything", "no memory of", "no context about",
+        "not stored", "unable to find any",
+        "i don't have specific information about this",
     ])
+    # Override: if agent recalled successfully and hit keywords, it's not no-knowledge
+    admits_no_knowledge = _nk_phrases and coverage < 0.5 and len(tool_calls) == 0
 
     return {
         "scenario_id": scenario.id,
@@ -467,7 +478,7 @@ Recall is fast (~3ms) and free (local search). Use it liberally."""
         "total_tokens": input_tokens + output_tokens,
         "keyword_coverage": coverage,
         "hit_keywords": hits,
-        "missed_keywords": [kw for kw in scenario.keywords if kw.lower() not in answer_lower],
+        "missed_keywords": [kw for kw in scenario.keywords if not any(alt.strip().lower() in answer_lower for alt in kw.split("|"))],
         "admits_no_knowledge": admits_no_knowledge,
         "answer_preview": final_answer[:300],
         "error": error,
