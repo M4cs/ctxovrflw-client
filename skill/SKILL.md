@@ -337,6 +337,189 @@ Use namespaced tags for organization:
 | Slow semantic search   | First query loads ONNX model (~2s), subsequent queries are fast |
 | Cloud sync not working | Check tier with `ctxovrflw account` — Free tier is local-only   |
 
-## Usage of CLI instead of MCP
+## CLI Alternative (When MCP Is Unavailable)
 
-You can use the CLI tools instead of the MCP tools. The CLI tools offer the same functionality as the MCP tools, and can be called in scripts or from other CLI tools.
+If the MCP connection isn't working or your environment doesn't support MCP, you can use the
+ctxovrflw CLI and HTTP API directly. These provide the same functionality.
+
+### Remember (Store a Memory)
+
+```bash
+# Basic
+ctxovrflw remember "Max prefers Railway for hosting"
+
+# With type, tags, and subject
+ctxovrflw remember "Auth API uses JWT with 15min access tokens" \
+  --type semantic \
+  --tags "project:myapp,api:auth,decision" \
+  --subject "project:myapp"
+
+# Types: semantic, episodic, procedural, preference
+```
+
+### Recall (Search Memories)
+
+```bash
+# Basic search
+ctxovrflw recall "deployment preferences"
+
+# Limit results
+ctxovrflw recall "coding conventions" --limit 5
+```
+
+### Forget (Delete a Memory)
+
+```bash
+# Dry run first (see what would be deleted)
+ctxovrflw forget <memory-id> --dry-run
+
+# Actually delete
+ctxovrflw forget <memory-id>
+```
+
+### Browse Memories (Interactive TUI)
+
+```bash
+ctxovrflw memories
+```
+
+Opens an interactive terminal UI where you can browse, search, view details, delete,
+and see knowledge graph connections (`g` key) for any memory.
+
+**TUI keybindings:**
+- `j`/`k` or arrows — navigate
+- `/` — search
+- `Enter` — view details
+- `d` — delete (with confirmation)
+- `g` — graph view (Pro tier, shows entity relationships)
+- `Space` — multi-select
+- `q` — quit
+
+### Reindex (Rebuild Embeddings)
+
+```bash
+ctxovrflw reindex
+```
+
+Re-embeds all memories with the current model. Use after switching models or if semantic search
+seems degraded.
+
+### Model Management
+
+```bash
+# List available embedding models with dimensions, size, and descriptions
+ctxovrflw model list
+
+# Show current model details
+ctxovrflw model current
+
+# Switch to a different model (downloads, re-embeds everything)
+ctxovrflw model switch bge-base-en-v1.5
+```
+
+Available models:
+- `all-MiniLM-L6-v2` — 384d, ~23MB. Fast, lightweight, good for English. (Default)
+- `bge-small-en-v1.5` — 384d, ~33MB. Better quality, same speed. English only.
+- `bge-base-en-v1.5` — 768d, ~110MB. Significant quality bump.
+- `snowflake-arctic-embed-m-v2.0` — 768d, ~113MB. Multilingual, 8192 token context.
+- `bge-m3` — 1024d, ~570MB. Top-tier multilingual, 100+ languages.
+
+Switching models exports all data, recreates the database with the new vector dimensions,
+reimports everything, and re-embeds all memories. No data loss.
+
+### Knowledge Graph (CLI)
+
+```bash
+# Build graph from existing memories (extracts entities from subjects and tags)
+ctxovrflw graph build
+
+# Show graph statistics
+ctxovrflw graph stats
+```
+
+### Sync & Account
+
+```bash
+ctxovrflw sync       # Manually trigger cloud sync
+ctxovrflw account    # Show tier, usage, sync status
+ctxovrflw login      # Authenticate for cloud features
+ctxovrflw logout     # Disconnect cloud
+```
+
+### Daemon Management
+
+```bash
+ctxovrflw start              # Start the daemon
+ctxovrflw start --foreground # Run in foreground (for debugging)
+ctxovrflw stop               # Stop the daemon
+ctxovrflw status             # Show daemon status, memory count, tier
+ctxovrflw service install    # Install as systemd user service
+ctxovrflw service status     # Check service status
+```
+
+### HTTP API (Alternative to CLI)
+
+If you can make HTTP requests but can't run the CLI binary, use the REST API directly.
+The daemon listens on `http://127.0.0.1:7437`. All `/v1/*` endpoints require an auth token
+(found in `~/.ctxovrflw/config.toml` as `auth_token`).
+
+```bash
+TOKEN="<auth_token from config.toml>"
+
+# Remember
+curl -s -X POST "http://127.0.0.1:7437/v1/memories" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "content": "Max prefers Railway for hosting",
+    "type": "preference",
+    "tags": ["infra:railway"],
+    "subject": "user",
+    "agent_id": "my-agent"
+  }'
+
+# Recall (semantic search)
+curl -s -X POST "http://127.0.0.1:7437/v1/search" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query": "hosting preferences", "limit": 5}'
+
+# Recall with subject filter
+curl -s -X POST "http://127.0.0.1:7437/v1/search" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"query": "preferences", "subject": "user", "limit": 5}'
+
+# Forget (delete)
+curl -s -X DELETE "http://127.0.0.1:7437/v1/memories/<memory-id>" \
+  -H "Authorization: Bearer $TOKEN"
+
+# Update a memory
+curl -s -X PATCH "http://127.0.0.1:7437/v1/memories/<memory-id>" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"content": "updated content", "tags": ["new-tag"]}'
+
+# Health check (no auth needed)
+curl -s http://127.0.0.1:7437/health
+
+# Status
+curl -s "http://127.0.0.1:7437/v1/status" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Note on `agent_id`:** When storing memories via the API, include `"agent_id": "your-agent-name"`
+to track which agent stored each memory. This helps with cross-agent recall and debugging.
+The `agent_id` is a free-form string — use something identifiable like `"cursor"`, `"claude-code"`,
+`"cline"`, or your agent's name.
+
+### When to Use CLI/API vs MCP
+
+| Scenario | Use |
+|---|---|
+| AI tool with native MCP support (Cursor, Claude Code, Cline) | MCP tools |
+| AI tool without MCP support | HTTP API |
+| Scripts and automation | CLI commands |
+| Debugging or manual memory management | CLI or TUI (`ctxovrflw memories`) |
+| OpenClaw agents | CLI via `exec`, or MCP via `mcporter` |
+| CI/CD pipelines | CLI commands with `--yes` flag |
