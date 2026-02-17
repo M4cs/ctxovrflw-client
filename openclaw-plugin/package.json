@@ -1,13 +1,13 @@
 {
   "name": "@ctxovrflw/openclaw-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "ctxovrflw memory plugin for OpenClaw — shared AI memory layer with semantic search, knowledge graph, and cross-tool recall",
   "license": "MIT",
   "author": "ctxovrflw",
   "homepage": "https://ctxovrflw.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/M4cs/ctxovrflw-client",
+    "url": "git+https://github.com/M4cs/ctxovrflw-client.git",
     "directory": "openclaw-plugin"
   },
   "keywords": [
@@ -20,7 +20,9 @@
     "knowledge-graph"
   ],
   "openclaw": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "files": [
     "index.ts",
