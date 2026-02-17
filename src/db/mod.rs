@@ -119,6 +119,15 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_memories_expires_at ON memories(expires_at);")?;
 
+    // Add agent_id column if missing
+    let has_agent_id: bool = conn
+        .prepare("SELECT agent_id FROM memories LIMIT 0")
+        .is_ok();
+    if !has_agent_id {
+        conn.execute_batch("ALTER TABLE memories ADD COLUMN agent_id TEXT;")?;
+    }
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_memories_agent_id ON memories(agent_id);")?;
+
     // sqlite-vec virtual table for vector search
     conn.execute_batch(
         "

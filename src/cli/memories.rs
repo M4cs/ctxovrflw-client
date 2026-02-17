@@ -32,6 +32,7 @@ struct MemoryRow {
     tags: Vec<String>,
     subject: Option<String>,
     source: Option<String>,
+    agent_id: Option<String>,
     created_at: String,
     updated_at: String,
     synced_at: Option<String>,
@@ -159,6 +160,7 @@ impl App {
                     || m.subject.as_ref().map_or(false, |s| s.to_lowercase().contains(&search_lower))
                     || m.memory_type.to_lowercase().contains(&search_lower)
                     || m.source.as_ref().map_or(false, |s| s.to_lowercase().contains(&search_lower))
+                    || m.agent_id.as_ref().map_or(false, |s| s.to_lowercase().contains(&search_lower))
             })
             .map(|(i, _)| i)
             .collect();
@@ -229,7 +231,7 @@ impl App {
 
 fn load_memories(conn: &Connection) -> Result<Vec<MemoryRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, tags, subject, source, created_at, updated_at, synced_at, deleted
+        "SELECT id, content, type, tags, subject, source, agent_id, created_at, updated_at, synced_at, deleted
          FROM memories WHERE deleted = 0
          ORDER BY created_at DESC"
     )?;
@@ -242,10 +244,11 @@ fn load_memories(conn: &Connection) -> Result<Vec<MemoryRow>> {
             tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
             subject: row.get(4)?,
             source: row.get(5)?,
-            created_at: row.get(6)?,
-            updated_at: row.get(7)?,
-            synced_at: row.get(8)?,
-            deleted: row.get::<_, i32>(9)? != 0,
+            agent_id: row.get(6)?,
+            created_at: row.get(7)?,
+            updated_at: row.get(8)?,
+            synced_at: row.get(9)?,
+            deleted: row.get::<_, i32>(10)? != 0,
         })
     })?.collect::<std::result::Result<Vec<_>, _>>()?;
 
@@ -713,6 +716,10 @@ fn render_detail(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("Source:   ", Style::default().fg(Color::Cyan).bold()),
             Span::raw(mem.source.as_deref().unwrap_or("—")),
+        ]),
+        Line::from(vec![
+            Span::styled("Agent:    ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw(mem.agent_id.as_deref().unwrap_or("—")),
         ]),
         Line::from(vec![
             Span::styled("Tags:     ", Style::default().fg(Color::Cyan).bold()),

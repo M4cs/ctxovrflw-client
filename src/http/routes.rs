@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::config::Config;
 use crate::db;
-use crate::validation::{sanitize_error, validate_tags, validate_subject, resolve_expiry, MAX_CONTENT_SIZE};
+use crate::validation::{sanitize_error, validate_tags, validate_subject, validate_agent_id, resolve_expiry, MAX_CONTENT_SIZE};
 use super::AppState;
 
 pub fn router(state: AppState) -> Router {
@@ -61,6 +61,8 @@ struct StoreRequest {
     #[serde(default)]
     source: Option<String>,
     #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
     ttl: Option<String>,
     #[serde(default)]
     expires_at: Option<String>,
@@ -78,6 +80,9 @@ async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreReque
         Err(e) => return Json(json!({ "ok": false, "error": e })),
     };
     if let Err(e) = validate_subject(body.subject.as_deref()) {
+        return Json(json!({ "ok": false, "error": e }));
+    }
+    if let Err(e) = validate_agent_id(body.agent_id.as_deref()) {
         return Json(json!({ "ok": false, "error": e }));
     }
 
@@ -124,7 +129,7 @@ async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreReque
         Err(e) => return Json(json!({ "ok": false, "error": e })),
     };
 
-    match db::memories::store_with_expiry(&conn, &body.content, &mtype, &tags, body.subject.as_deref(), Some(source), embedding.as_deref(), expires_at.as_deref()) {
+    match db::memories::store_with_expiry(&conn, &body.content, &mtype, &tags, body.subject.as_deref(), Some(source), embedding.as_deref(), expires_at.as_deref(), body.agent_id.as_deref()) {
         Ok(memory) => {
             { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
             if cfg.is_logged_in() {
@@ -177,6 +182,8 @@ struct RecallRequest {
     max_tokens: Option<usize>,
     #[serde(default)]
     subject: Option<String>,
+    #[serde(default)]
+    agent_id: Option<String>,
     #[serde(default)]
     search_method: Option<String>,
 }

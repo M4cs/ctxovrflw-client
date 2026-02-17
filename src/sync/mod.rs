@@ -32,6 +32,8 @@ struct RemoteMemory {
     subject: Option<String>,
     source: Option<String>,
     #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
     expires_at: Option<String>,
     deleted: bool,
     created_at: String,
@@ -319,14 +321,14 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
 
     let mem: Option<serde_json::Value> = conn
         .query_row(
-            "SELECT id, content, type, tags, subject, source, deleted, created_at, updated_at, expires_at
+            "SELECT id, content, type, tags, subject, source, agent_id, deleted, created_at, updated_at, expires_at
              FROM memories WHERE id = ?1",
             rusqlite::params![memory_id],
             |row| {
                 let tags_str: String = row.get(3)?;
                 let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
                 let content: String = row.get(1)?;
-                let deleted: bool = row.get::<_, i32>(6)? != 0;
+                let deleted: bool = row.get::<_, i32>(7)? != 0;
 
                 Ok(serde_json::json!({
                     "id": row.get::<_, String>(0)?,
@@ -335,10 +337,11 @@ pub async fn push_one(cfg: &Config, memory_id: &str) -> Result<bool> {
                     "tags": tags,
                     "subject": row.get::<_, Option<String>>(4)?,
                     "source": row.get::<_, Option<String>>(5)?,
-                    "expires_at": row.get::<_, Option<String>>(9)?,
+                    "agent_id": row.get::<_, Option<String>>(6)?,
+                    "expires_at": row.get::<_, Option<String>>(10)?,
                     "deleted": deleted,
-                    "created_at": row.get::<_, String>(7)?,
-                    "updated_at": row.get::<_, String>(8)?,
+                    "created_at": row.get::<_, String>(8)?,
+                    "updated_at": row.get::<_, String>(9)?,
                 }))
             },
         )
@@ -395,7 +398,7 @@ fn get_unsynced_memories(
     limit: usize,
 ) -> Result<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, tags, subject, source, deleted, created_at, updated_at, expires_at
+        "SELECT id, content, type, tags, subject, source, agent_id, deleted, created_at, updated_at, expires_at
          FROM memories
          WHERE synced_at IS NULL OR updated_at > synced_at
          ORDER BY updated_at ASC
@@ -407,7 +410,7 @@ fn get_unsynced_memories(
             let tags_str: String = row.get(3)?;
             let tags: Vec<String> = serde_json::from_str(&tags_str).unwrap_or_default();
             let content: String = row.get(1)?;
-            let deleted: bool = row.get::<_, i32>(6)? != 0;
+            let deleted: bool = row.get::<_, i32>(7)? != 0;
 
             Ok((
                 row.get::<_, String>(0)?,  // id
@@ -416,16 +419,17 @@ fn get_unsynced_memories(
                 tags,
                 row.get::<_, Option<String>>(4)?, // subject
                 row.get::<_, Option<String>>(5)?, // source
+                row.get::<_, Option<String>>(6)?, // agent_id
                 deleted,
-                row.get::<_, String>(7)?,  // created_at
-                row.get::<_, String>(8)?,  // updated_at
-                row.get::<_, Option<String>>(9)?, // expires_at
+                row.get::<_, String>(8)?,  // created_at
+                row.get::<_, String>(9)?,  // updated_at
+                row.get::<_, Option<String>>(10)?, // expires_at
             ))
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
     let mut result = Vec::with_capacity(memories.len());
-    for (id, content, mtype, tags, subject, source, deleted, created_at, updated_at, expires_at) in memories {
+    for (id, content, mtype, tags, subject, source, agent_id, deleted, created_at, updated_at, expires_at) in memories {
         let (enc_content, enc_tags, hash) = encrypt_memory(enc_key, &content, &tags)
             .map_err(|e| anyhow::anyhow!("Encryption failed for {id}: {e}"))?;
         let mem = serde_json::json!({
@@ -435,6 +439,7 @@ fn get_unsynced_memories(
             "tags": [enc_tags],
             "subject": subject,
             "source": source,
+            "agent_id": agent_id,
             "expires_at": expires_at,
             "deleted": deleted,
             "created_at": created_at,
@@ -518,9 +523,9 @@ fn merge_remote_memories(
         if exists {
             let rows = conn.execute(
                 "UPDATE memories SET content = ?1, type = ?2, tags = ?3, subject = ?4, source = ?5,
-                 expires_at = ?6, updated_at = ?7, synced_at = ?7, deleted = 0
-                 WHERE id = ?8 AND updated_at < ?7",
-                rusqlite::params![content, mem.memory_type, tags_json, mem.subject, mem.source, mem.expires_at, mem.updated_at, mem.id],
+                 agent_id = ?6, expires_at = ?7, updated_at = ?8, synced_at = ?8, deleted = 0
+                 WHERE id = ?9 AND updated_at < ?8",
+                rusqlite::params![content, mem.memory_type, tags_json, mem.subject, mem.source, mem.agent_id, mem.expires_at, mem.updated_at, mem.id],
             )?;
             // Re-embed if content was actually updated
             if rows > 0 {
@@ -535,9 +540,9 @@ fn merge_remote_memories(
             }
         } else {
             conn.execute(
-                "INSERT INTO memories (id, content, type, tags, subject, source, expires_at, deleted, created_at, updated_at, synced_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0, ?8, ?9, ?9)",
-                rusqlite::params![mem.id, content, mem.memory_type, tags_json, mem.subject, mem.source, mem.expires_at, mem.created_at, mem.updated_at],
+                "INSERT INTO memories (id, content, type, tags, subject, source, agent_id, expires_at, deleted, created_at, updated_at, synced_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 0, ?9, ?10, ?10)",
+                rusqlite::params![mem.id, content, mem.memory_type, tags_json, mem.subject, mem.source, mem.agent_id, mem.expires_at, mem.created_at, mem.updated_at],
             )?;
 
             // Generate embedding for the new memory

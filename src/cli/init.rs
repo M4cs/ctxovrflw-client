@@ -1387,6 +1387,7 @@ pub(crate) fn store_migrated_memory(
         Some("openclaw:MEMORY.md"),
         embedding.as_deref(),
         None,
+        None,
     )?;
 
     Ok(())

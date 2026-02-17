@@ -15,6 +15,8 @@ pub struct Memory {
     pub subject: Option<String>,
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -62,8 +64,9 @@ pub fn store(
     subject: Option<&str>,
     source: Option<&str>,
     embedding: Option<&[f32]>,
+    agent_id: Option<&str>,
 ) -> Result<Memory> {
-    store_with_expiry(conn, content, memory_type, tags, subject, source, embedding, None)
+    store_with_expiry(conn, content, memory_type, tags, subject, source, embedding, None, agent_id)
 }
 
 pub fn store_with_expiry(
@@ -75,14 +78,15 @@ pub fn store_with_expiry(
     source: Option<&str>,
     embedding: Option<&[f32]>,
     expires_at: Option<&str>,
+    agent_id: Option<&str>,
 ) -> Result<Memory> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     let tags_json = serde_json::to_string(tags)?;
 
     conn.execute(
-        "INSERT INTO memories (id, content, type, tags, subject, source, embedding, expires_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        "INSERT INTO memories (id, content, type, tags, subject, source, embedding, expires_at, agent_id, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             id,
             content,
@@ -92,6 +96,7 @@ pub fn store_with_expiry(
             source,
             embedding.map(|e| bytemuck_cast(e)),
             expires_at,
+            agent_id,
             now,
             now,
         ],
@@ -112,6 +117,7 @@ pub fn store_with_expiry(
         tags: tags.to_vec(),
         subject: subject.map(|s| s.to_string()),
         source: source.map(|s| s.to_string()),
+        agent_id: agent_id.map(|s| s.to_string()),
         expires_at: expires_at.map(|s| s.to_string()),
         created_at: now.clone(),
         updated_at: now,
@@ -120,7 +126,7 @@ pub fn store_with_expiry(
 
 pub fn get(conn: &Connection, id: &str) -> Result<Option<Memory>> {
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, tags, subject, source, expires_at, created_at, updated_at
+        "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at
          FROM memories WHERE id = ?1 AND deleted = 0",
     )?;
 
@@ -136,9 +142,10 @@ pub fn get(conn: &Connection, id: &str) -> Result<Option<Memory>> {
                 tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
                 subject: row.get(4)?,
                 source: row.get(5)?,
-                expires_at: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                agent_id: row.get(6)?,
+                expires_at: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })
         .ok();
@@ -164,7 +171,7 @@ pub fn count(conn: &Connection) -> Result<usize> {
 
 pub fn list(conn: &Connection, limit: usize, offset: usize) -> Result<Vec<Memory>> {
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, tags, subject, source, expires_at, created_at, updated_at
+        "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at
          FROM memories WHERE deleted = 0
          AND (expires_at IS NULL OR expires_at > datetime('now'))
          ORDER BY created_at DESC LIMIT ?1 OFFSET ?2",
@@ -182,9 +189,10 @@ pub fn list(conn: &Connection, limit: usize, offset: usize) -> Result<Vec<Memory
                 tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
                 subject: row.get(4)?,
                 source: row.get(5)?,
-                expires_at: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                agent_id: row.get(6)?,
+                expires_at: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;

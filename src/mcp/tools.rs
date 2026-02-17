@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 
 use crate::config::{Config, Tier};
 use crate::db;
-use crate::validation::{self, validate_tags, validate_subject, MAX_CONTENT_SIZE};
+use crate::validation::{self, validate_tags, validate_subject, validate_agent_id, MAX_CONTENT_SIZE};
 
 pub fn list_tools(cfg: &Config) -> Vec<Value> {
     let mut tools = vec![
@@ -31,6 +31,10 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
                     "subject": {
                         "type": "string",
                         "description": "The entity this memory is about. Use format like 'user', 'project:myapp', 'person:sarah', 'agent:claude', 'team:backend'. Enables scoped recall — 'tell me everything about sarah'."
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Self-identification of the AI agent storing this memory. Use your name or tool name (e.g., 'aldous', 'cursor', 'claude-code'). Enables cross-agent memory filtering."
                     },
                     "ttl": {
                         "type": "string",
@@ -66,6 +70,10 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
                     "subject": {
                         "type": "string",
                         "description": "Filter results to a specific subject entity (e.g., 'user', 'project:myapp', 'person:sarah')"
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Filter results to memories stored by a specific agent (e.g., 'aldous', 'cursor')"
                     }
                 },
                 "required": ["query"]
@@ -528,6 +536,14 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
         }));
     }
 
+    let agent_id = args["agent_id"].as_str();
+    if let Err(e) = validate_agent_id(agent_id) {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": e }],
+            "isError": true
+        }));
+    }
+
     let expires_at = match resolve_expiry_from_args(args) {
         Ok(e) => e,
         Err(e) => return Ok(json!({
@@ -545,6 +561,7 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
         Some("mcp"),
         embedding.as_deref(),
         expires_at.as_deref(),
+        agent_id,
     )?;
 
     // Immediate push to cloud

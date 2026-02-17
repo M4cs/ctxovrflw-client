@@ -69,7 +69,7 @@ fn sanitize_fts_query(query: &str) -> String {
 pub fn keyword_search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(Memory, f64)>> {
     let sanitized = sanitize_fts_query(query);
     let mut stmt = conn.prepare(
-        "SELECT m.id, m.content, m.type, m.tags, m.subject, m.source, m.expires_at, m.created_at, m.updated_at,
+        "SELECT m.id, m.content, m.type, m.tags, m.subject, m.source, m.agent_id, m.expires_at, m.created_at, m.updated_at,
                 rank
          FROM memories_fts fts
          JOIN memories m ON m.rowid = fts.rowid
@@ -81,7 +81,7 @@ pub fn keyword_search(conn: &Connection, query: &str, limit: usize) -> Result<Ve
 
     let results = stmt
         .query_map(params![sanitized, limit], |row| {
-            let rank: f64 = row.get(9)?;
+            let rank: f64 = row.get(10)?;
             Ok((
                 Memory {
                     id: row.get(0)?,
@@ -93,9 +93,10 @@ pub fn keyword_search(conn: &Connection, query: &str, limit: usize) -> Result<Ve
                     tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
                     subject: row.get(4)?,
                     source: row.get(5)?,
-                    expires_at: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    agent_id: row.get(6)?,
+                    expires_at: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 },
                 -rank, // FTS5 rank is negative (lower = better), flip for score
             ))
@@ -115,7 +116,7 @@ pub fn semantic_search(
 
     // sqlite-vec uses a KNN query via the virtual table's match syntax
     let mut stmt = conn.prepare(
-        "SELECT v.id, v.distance, m.content, m.type, m.tags, m.subject, m.source, m.expires_at, m.created_at, m.updated_at
+        "SELECT v.id, v.distance, m.content, m.type, m.tags, m.subject, m.source, m.agent_id, m.expires_at, m.created_at, m.updated_at
          FROM memory_vectors v
          JOIN memories m ON m.id = v.id
          WHERE v.embedding MATCH ?1 AND k = ?2
@@ -142,9 +143,10 @@ pub fn semantic_search(
                     tags: serde_json::from_str(&row.get::<_, String>(4)?).unwrap_or_default(),
                     subject: row.get(5)?,
                     source: row.get(6)?,
-                    expires_at: row.get(7)?,
-                    created_at: row.get(8)?,
-                    updated_at: row.get(9)?,
+                    agent_id: row.get(7)?,
+                    expires_at: row.get(8)?,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
                 },
                 score,
             ))
@@ -288,7 +290,7 @@ fn search_by_tags(conn: &Connection, query_words: &[&str], limit: usize) -> Resu
 
         let pattern = format!("%\"{}\"%", word);
         let mut stmt = conn.prepare(
-            "SELECT id, content, type, tags, subject, source, expires_at, created_at, updated_at
+            "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at
              FROM memories WHERE tags LIKE ?1 AND deleted = 0
              AND (expires_at IS NULL OR expires_at > datetime('now'))
              ORDER BY updated_at DESC LIMIT ?2",
@@ -303,9 +305,10 @@ fn search_by_tags(conn: &Connection, query_words: &[&str], limit: usize) -> Resu
                     tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
                     subject: row.get(4)?,
                     source: row.get(5)?,
-                    expires_at: row.get(6)?,
-                    created_at: row.get(7)?,
-                    updated_at: row.get(8)?,
+                    agent_id: row.get(6)?,
+                    expires_at: row.get(7)?,
+                    created_at: row.get(8)?,
+                    updated_at: row.get(9)?,
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -319,7 +322,7 @@ fn search_by_tags(conn: &Connection, query_words: &[&str], limit: usize) -> Resu
 /// List all memories about a specific subject
 pub fn by_subject(conn: &Connection, subject: &str, limit: usize) -> Result<Vec<Memory>> {
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, tags, subject, source, expires_at, created_at, updated_at
+        "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at
          FROM memories WHERE subject = ?1 AND deleted = 0
          AND (expires_at IS NULL OR expires_at > datetime('now'))
          ORDER BY updated_at DESC LIMIT ?2",
@@ -334,9 +337,10 @@ pub fn by_subject(conn: &Connection, subject: &str, limit: usize) -> Result<Vec<
                 tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
                 subject: row.get(4)?,
                 source: row.get(5)?,
-                expires_at: row.get(6)?,
-                created_at: row.get(7)?,
-                updated_at: row.get(8)?,
+                agent_id: row.get(6)?,
+                expires_at: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
             })
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;

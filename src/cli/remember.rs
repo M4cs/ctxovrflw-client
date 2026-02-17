@@ -35,7 +35,7 @@ pub async fn run(cfg: &Config, text: &str, memory_type: Option<&str>, tags: Vec<
         None
     };
 
-    let memory = crate::db::memories::store(&conn, text, &mtype, &tags, subject, Some("cli"), embedding.as_deref())?;
+    let memory = crate::db::memories::store(&conn, text, &mtype, &tags, subject, Some("cli"), embedding.as_deref(), None)?;
     println!("Remembered [{}]: {}", memory.id, text);
 
     // Immediate push to cloud if logged in

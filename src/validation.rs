@@ -77,6 +77,25 @@ pub fn validate_subject(subject: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
+pub const MAX_AGENT_ID_LENGTH: usize = 64;
+
+/// Validate agent_id: max 64 chars, alphanumeric + hyphens + colons + underscores only.
+pub fn validate_agent_id(agent_id: Option<&str>) -> Result<(), String> {
+    if let Some(id) = agent_id {
+        if id.len() > MAX_AGENT_ID_LENGTH {
+            return Err(format!(
+                "agent_id too long ({} chars). Maximum is {} chars.",
+                id.len(),
+                MAX_AGENT_ID_LENGTH
+            ));
+        }
+        if !id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == ':' || c == '_') {
+            return Err("agent_id may only contain alphanumeric characters, hyphens, colons, and underscores.".to_string());
+        }
+    }
+    Ok(())
+}
+
 /// Sanitize error messages to avoid leaking internal paths or implementation details.
 pub fn sanitize_error(e: &impl std::fmt::Display) -> String {
     let msg = e.to_string();
