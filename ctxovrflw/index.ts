@@ -194,7 +194,10 @@ class CtxovrflwClient {
 // Bootstrap helpers
 // ============================================================================
 
-function runBinary(args: string[], logger: any): Promise<{ code: number; output: string }> {
+function runBinary(
+  args: string[],
+  logger: any,
+): Promise<{ code: number; output: string }> {
   return new Promise((resolve) => {
     const bin = findBinary();
     if (!bin) {
@@ -222,10 +225,10 @@ async function ensureInstalled(logger: any): Promise<boolean> {
 
   logger.info("ctxovrflw: not installed, attempting install...");
   try {
-    execSync(
-      'curl -fsSL https://ctxovrflw.dev/install.sh | bash',
-      { stdio: "pipe", timeout: 60000 },
-    );
+    execSync("curl -fsSL https://ctxovrflw.dev/install.sh | bash", {
+      stdio: "pipe",
+      timeout: 60000,
+    });
     return isInstalled();
   } catch (err: any) {
     logger.warn(`ctxovrflw: auto-install failed: ${err.message}`);
@@ -327,8 +330,7 @@ const ctxovrflwPlugin = {
     // Auto-discover config — no manual setup needed
     const port = readDaemonPort();
     const cfg: PluginConfig = {
-      daemonUrl:
-        (raw.daemonUrl as string) ?? `http://127.0.0.1:${port}`,
+      daemonUrl: (raw.daemonUrl as string) ?? `http://127.0.0.1:${port}`,
       authToken: (raw.authToken as string) ?? readAuthToken(),
       autoRecall: (raw.autoRecall as boolean) ?? true,
       autoCapture: (raw.autoCapture as boolean) ?? false,
@@ -512,8 +514,7 @@ const ctxovrflwPlugin = {
             },
             subject: {
               type: "string",
-              description:
-                'Subject entity (e.g. "user", "project:myapp")',
+              description: 'Subject entity (e.g. "user", "project:myapp")',
             },
           },
           required: ["text"],
@@ -522,9 +523,7 @@ const ctxovrflwPlugin = {
           const c = await getClient();
           if (!c) {
             return {
-              content: [
-                { type: "text", text: "ctxovrflw is not available." },
-              ],
+              content: [{ type: "text", text: "ctxovrflw is not available." }],
             };
           }
 
@@ -568,9 +567,7 @@ const ctxovrflwPlugin = {
           const c = await getClient();
           if (!c) {
             return {
-              content: [
-                { type: "text", text: "ctxovrflw is not available." },
-              ],
+              content: [{ type: "text", text: "ctxovrflw is not available." }],
             };
           }
 
@@ -603,9 +600,7 @@ const ctxovrflwPlugin = {
           const c = await getClient();
           if (!c) {
             return {
-              content: [
-                { type: "text", text: "ctxovrflw is not available." },
-              ],
+              content: [{ type: "text", text: "ctxovrflw is not available." }],
             };
           }
 
@@ -646,8 +641,7 @@ const ctxovrflwPlugin = {
       {
         name: "memory_get",
         label: "Memory Get (ctxovrflw)",
-        description:
-          "Compatibility shim — use memory_search instead.",
+        description: "Compatibility shim — use memory_search instead.",
         parameters: {
           type: "object",
           properties: {
@@ -661,9 +655,7 @@ const ctxovrflwPlugin = {
           const c = await getClient();
           if (!c) {
             return {
-              content: [
-                { type: "text", text: "ctxovrflw is not available." },
-              ],
+              content: [{ type: "text", text: "ctxovrflw is not available." }],
             };
           }
 
@@ -792,8 +784,7 @@ const ctxovrflwPlugin = {
                 process.exit(1);
               }
               try {
-                const tags =
-                  opts.tags?.split(",").map((t) => t.trim()) ?? [];
+                const tags = opts.tags?.split(",").map((t) => t.trim()) ?? [];
                 const memory = await c.remember(text, {
                   type: opts.type,
                   tags,
@@ -960,7 +951,9 @@ const ctxovrflwPlugin = {
               `ctxovrflw: connected — ${s.memory_count} memories, v${s.daemon_version}`,
             );
           } catch {
-            api.logger.info("ctxovrflw: daemon healthy but status fetch failed");
+            api.logger.info(
+              "ctxovrflw: daemon healthy but status fetch failed",
+            );
           }
         }
       },

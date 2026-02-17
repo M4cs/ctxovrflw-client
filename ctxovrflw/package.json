@@ -8,7 +8,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/M4cs/ctxovrflw-client.git",
-    "directory": "openclaw-plugin"
+    "directory": "ctxovrflw"
   },
   "keywords": [
     "openclaw",
