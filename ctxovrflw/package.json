@@ -1,7 +1,7 @@
 {
   "name": "@ctxovrflw/memory-ctxovrflw",
-  "version": "0.3.0",
-  "description": "ctxovrflw memory plugin for OpenClaw — shared AI memory layer with semantic search, knowledge graph, and cross-tool recall",
+  "version": "0.4.0",
+  "description": "ctxovrflw memory plugin for OpenClaw \u2014 shared AI memory layer with semantic search, knowledge graph, and cross-tool recall",
   "license": "MIT",
   "author": "ctxovrflw",
   "homepage": "https://ctxovrflw.dev",

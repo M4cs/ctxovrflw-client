@@ -17,15 +17,16 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 type Memory = {
   id: string;
   content: string;
-  memory_type: string;
+  type: string;
   subject?: string;
   tags: string[];
   agent_id?: string;
-  score?: number;
+  source?: string;
   created_at: string;
+  updated_at: string;
 };
 
-type SearchResponse = { memories: Memory[]; graph_context?: string };
+type SearchResponse = { ok: boolean; results: { memory: Memory; score: number }[]; graph_context?: string };
 type StatusResponse = { memory_count: number; daemon_version: string; tier?: string; uptime_seconds?: number };
 
 type PluginConfig = {
@@ -95,7 +96,7 @@ class CtxovrflwClient {
   }
 
   recall(query: string, opts?: { limit?: number; subject?: string }) {
-    return this.req<SearchResponse>("POST", "/v1/search", { query, limit: opts?.limit ?? 10, subject: opts?.subject });
+    return this.req<SearchResponse>("POST", "/v1/memories/recall", { query, limit: opts?.limit ?? 10, subject: opts?.subject });
   }
 
   forget(id: string) { return this.req<void>("DELETE", `/v1/memories/${encodeURIComponent(id)}`); }
@@ -205,16 +206,17 @@ const ctxovrflwPlugin = {
         if (!c) return textResult(SETUP_MSG);
         try {
           const result = await c.recall(params.query, { limit: params.limit ?? 10, subject: params.subject });
-          const memories = result.memories ?? [];
-          if (memories.length === 0) return textResult("No relevant memories found.", { count: 0 });
-          const lines = memories.map((m, i) =>
-            `${i + 1}. [${m.memory_type}] ${m.content}${m.subject ? ` (${m.subject})` : ""}${m.score ? ` — ${(m.score * 100).toFixed(0)}%` : ""}`
-          );
-          let text = `Found ${memories.length} memories:\n\n${lines.join("\n")}`;
+          const entries = result.results ?? [];
+          if (entries.length === 0) return textResult("No relevant memories found.", { count: 0 });
+          const lines = entries.map((e, i) => {
+            const m = e.memory;
+            return `${i + 1}. [${m.type}] ${m.content}${m.subject ? ` (${m.subject})` : ""}${e.score ? ` — ${(e.score * 100).toFixed(0)}%` : ""}`;
+          });
+          let text = `Found ${entries.length} memories:\n\n${lines.join("\n")}`;
           if (result.graph_context) text += `\n\n--- Graph Context ---\n${result.graph_context}`;
           return textResult(text, {
-            count: memories.length,
-            memories: memories.map(m => ({ id: m.id, content: m.content, type: m.memory_type, subject: m.subject, tags: m.tags, score: m.score, agent_id: m.agent_id })),
+            count: entries.length,
+            memories: entries.map(e => ({ id: e.memory.id, content: e.memory.content, type: e.memory.type, subject: e.memory.subject, tags: e.memory.tags, score: e.score, agent_id: e.memory.agent_id })),
           });
         } catch (err) { return textResult(`ctxovrflw recall failed: ${err}`); }
       },
@@ -295,9 +297,9 @@ const ctxovrflwPlugin = {
         if (/^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(params.path)) {
           try {
             const result = await c.recall(params.path, { limit: 1 });
-            if (result.memories?.length > 0) {
-              const m = result.memories[0];
-              return textResult(`[${m.memory_type}] ${m.content}${m.subject ? ` (subject: ${m.subject})` : ""}`);
+            if (result.results?.length > 0) {
+              const m = result.results[0].memory;
+              return textResult(`[${m.type}] ${m.content}${m.subject ? ` (subject: ${m.subject})` : ""}`);
             }
           } catch { /* fall through */ }
         }
@@ -323,8 +325,9 @@ const ctxovrflwPlugin = {
           if (!c) { console.error(SETUP_MSG); process.exit(1); }
           try {
             const result = await c.recall(query, { limit: parseInt(opts.limit) });
-            for (const m of result.memories ?? []) {
-              const score = m.score ? ` (${(m.score * 100).toFixed(0)}%)` : "";
+            for (const e of result.results ?? []) {
+              const m = e.memory;
+              const score = e.score ? ` (${(e.score * 100).toFixed(0)}%)` : "";
               console.log(`[${m.id.slice(0, 8)}] ${m.content}${score}`);
             }
           } catch (err) { console.error(`Failed: ${err}`); }
@@ -367,10 +370,10 @@ const ctxovrflwPlugin = {
         if (!c) return;
         try {
           const result = await c.recall(event.prompt, { limit: cfg.recallLimit });
-          const memories = (result.memories ?? []).filter((m: Memory) => (m.score ?? 0) >= cfg.recallMinScore);
-          if (memories.length === 0) return;
-          api.logger.info(`memory-ctxovrflw: injecting ${memories.length} memories into context`);
-          const lines = memories.map((m: Memory, i: number) => `${i + 1}. [${m.memory_type}] ${escapeForPrompt(m.content)}`);
+          const entries = (result.results ?? []).filter((e: any) => (e.score ?? 0) >= cfg.recallMinScore);
+          if (entries.length === 0) return;
+          api.logger.info(`memory-ctxovrflw: injecting ${entries.length} memories into context`);
+          const lines = entries.map((e: any, i: number) => `${i + 1}. [${e.memory.type}] ${escapeForPrompt(e.memory.content)}`);
           let context = lines.join("\n");
           if (result.graph_context) context += `\n\n${escapeForPrompt(result.graph_context)}`;
           return {
