@@ -1,6 +1,6 @@
 [package]
 name = "ctxovrflw"
-version = "0.4.8"
+version = "0.4.9"
 edition = "2024"
 description = "Universal AI context layer. One memory, every tool."
 license = "MIT"

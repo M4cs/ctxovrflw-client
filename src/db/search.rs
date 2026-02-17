@@ -319,6 +319,35 @@ fn search_by_tags(conn: &Connection, query_words: &[&str], limit: usize) -> Resu
     Ok(all_results)
 }
 
+/// Fuzzy subject search — matches subjects containing the given string
+pub fn by_subject_fuzzy(conn: &Connection, subject: &str, limit: usize) -> Result<Vec<Memory>> {
+    let pattern = format!("%{}%", subject.replace('%', "\\%").replace('_', "\\_"));
+    let mut stmt = conn.prepare(
+        "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at
+         FROM memories WHERE subject LIKE ?1 ESCAPE '\\' AND deleted = 0
+         AND (expires_at IS NULL OR expires_at > datetime('now'))
+         ORDER BY updated_at DESC LIMIT ?2",
+    )?;
+
+    let results = stmt
+        .query_map(params![pattern, limit], |row| {
+            Ok(Memory {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                memory_type: row.get::<_, String>(2)?.parse().unwrap_or_default(),
+                tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
+                subject: row.get(4)?,
+                source: row.get(5)?,
+                agent_id: row.get(6)?,
+                expires_at: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(results)
+}
+
 /// List all memories about a specific subject
 pub fn by_subject(conn: &Connection, subject: &str, limit: usize) -> Result<Vec<Memory>> {
     let mut stmt = conn.prepare(

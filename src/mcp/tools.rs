@@ -575,6 +575,12 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
 
     { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
 
+    // Auto-extract entities from memory into knowledge graph (Pro only, best-effort)
+    #[cfg(feature = "pro")]
+    if matches!(cfg.tier, Tier::Pro) {
+        let _ = auto_extract_graph_from_memory(&conn, &memory);
+    }
+
     let expiry_note = match &memory.expires_at {
         Some(e) => format!(" (expires: {e})"),
         None => String::new(),
@@ -603,23 +609,64 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
 
     let conn = db::open()?;
 
-    // If subject filter is set, get subject-scoped results
+    // If subject filter is set, use it as a boost signal (not a hard filter).
+    // Try exact → fuzzy → fall through to semantic/hybrid search.
     if let Some(subj) = subject_filter {
-        let memories = db::search::by_subject(&conn, subj, limit)?;
-        if memories.is_empty() {
+        // 1. Exact match
+        let mut subject_memories = db::search::by_subject(&conn, subj, limit)?;
+
+        // 2. If exact match found nothing, try fuzzy
+        if subject_memories.is_empty() {
+            subject_memories = db::search::by_subject_fuzzy(&conn, subj, limit)?;
+        }
+
+        // 3. Also do a semantic/hybrid search on the query to find more relevant results
+        let extra_results = {
+            let fetch_extra = limit.saturating_sub(subject_memories.len()).max(3);
+            if cfg.tier.semantic_search_enabled() {
+                match crate::embed::get_or_init() {
+                    Ok(emb_arc) => match emb_arc.lock().unwrap_or_else(|e| e.into_inner()).embed(query) {
+                        Ok(embedding) => {
+                            #[cfg(feature = "pro")]
+                            { db::search::hybrid_search(&conn, query, &embedding, fetch_extra).unwrap_or_default() }
+                            #[cfg(not(feature = "pro"))]
+                            { db::search::semantic_search(&conn, &embedding, fetch_extra).unwrap_or_default() }
+                        }
+                        Err(_) => db::search::keyword_search(&conn, query, fetch_extra).unwrap_or_default(),
+                    },
+                    Err(_) => db::search::keyword_search(&conn, query, fetch_extra).unwrap_or_default(),
+                }
+            } else {
+                db::search::keyword_search(&conn, query, fetch_extra).unwrap_or_default()
+            }
+        };
+
+        // 4. Merge: subject-matched first, then extra (deduped)
+        let subject_ids: std::collections::HashSet<String> = subject_memories.iter().map(|m| m.id.clone()).collect();
+        let mut all_memories: Vec<(db::memories::Memory, Option<f64>)> = subject_memories.into_iter().map(|m| (m, None)).collect();
+        for (mem, score) in extra_results {
+            if !subject_ids.contains(&mem.id) && all_memories.len() < limit {
+                all_memories.push((mem, Some(score)));
+            }
+        }
+
+        if all_memories.is_empty() {
             return Ok(json!({
                 "content": [{ "type": "text", "text": format!("No memories found for subject: {subj}") }]
             }));
         }
+
         let mut text = format!("Memories about '{subj}':\n\n");
         let mut token_count = 0usize;
-        for memory in &memories {
+        for (memory, score) in &all_memories {
+            let score_str = score.map(|s| format!(", score: {:.2}", s)).unwrap_or_default();
             let line = format!(
-                "- [{}] ({}) {}{}\n",
-                memory.id, memory.memory_type, memory.content,
-                memory.subject.as_deref().map(|s| format!(" [{}]", s)).unwrap_or_default()
+                "- [{}] ({}{}){} {}\n",
+                memory.id, memory.memory_type, score_str,
+                memory.subject.as_deref().map(|s| format!(" [{}]", s)).unwrap_or_default(),
+                memory.content,
             );
-            let line_tokens = line.len() / 4; // ~4 chars per token
+            let line_tokens = line.len() / 4;
             if let Some(budget) = max_tokens {
                 if token_count + line_tokens > budget { break; }
             }
@@ -670,6 +717,31 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
             "content": [{ "type": "text", "text": "No memories found." }]
         }));
     }
+
+    // Graph-boosted results: find memories related via knowledge graph entities
+    #[cfg(feature = "pro")]
+    let results = if matches!(cfg.tier, Tier::Pro) {
+        let mut results = results;
+        let result_ids: std::collections::HashSet<String> = results.iter().map(|(m, _)| m.id.clone()).collect();
+        if let Ok(entities) = db::graph::search_entities(&conn, query, None, 3) {
+            for entity in &entities {
+                if let Ok(relations) = db::graph::get_relations(&conn, &entity.id, None, None) {
+                    for (_rel, _source, target) in &relations {
+                        if let Ok(related_mems) = db::search::by_subject_fuzzy(&conn, &target.name, 3) {
+                            for mem in related_mems {
+                                if !result_ids.contains(&mem.id) && results.len() < fetch_limit {
+                                    results.push((mem, 0.01)); // low score = graph-boosted
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        results
+    } else {
+        results
+    };
 
     let mut text = format!("Found memories (search: {method}):\n\n");
     let mut token_count = 0usize;
@@ -1476,4 +1548,42 @@ async fn handle_consolidate(cfg: &Config, args: &Value) -> Result<Value> {
     Ok(json!({
         "content": [{ "type": "text", "text": text }]
     }))
+}
+
+/// Auto-extract entities from a memory into the knowledge graph.
+/// Best-effort: errors are silently ignored.
+#[cfg(feature = "pro")]
+fn auto_extract_graph_from_memory(conn: &rusqlite::Connection, memory: &db::memories::Memory) -> Result<()> {
+    use db::graph::upsert_entity;
+
+    // 1. Extract entity from subject field
+    if let Some(subject) = &memory.subject {
+        let (entity_type, entity_name) = if let Some((t, n)) = subject.split_once(':') {
+            (t.to_string(), n.to_string())
+        } else {
+            ("generic".to_string(), subject.clone())
+        };
+        let entity = upsert_entity(conn, &entity_name, &entity_type, None)?;
+
+        // Create a self-referencing "memory" entity and link via mentioned_in
+        let mem_entity = upsert_entity(conn, &memory.id, "memory", None)?;
+        let _ = db::graph::upsert_relation(
+            conn,
+            &entity.id,
+            &mem_entity.id,
+            "mentioned_in",
+            1.0,
+            Some(&memory.id),
+            None,
+        );
+    }
+
+    // 2. Extract entities from namespaced tags (e.g., lang:rust, infra:aws)
+    for tag in &memory.tags {
+        if let Some((ns, value)) = tag.split_once(':') {
+            let _ = upsert_entity(conn, value, ns, None);
+        }
+    }
+
+    Ok(())
 }
