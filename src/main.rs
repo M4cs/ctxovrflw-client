@@ -58,6 +58,14 @@ async fn main() -> anyhow::Result<()> {
             }
             Ok(())
         },
+        Command::Model { action } => {
+            match action {
+                cli::ModelAction::List => cli::model::list()?,
+                cli::ModelAction::Current => cli::model::current()?,
+                cli::ModelAction::Switch { model_id } => cli::model::switch(&model_id).await?,
+            }
+            Ok(())
+        },
         Command::Reindex => {
             cli::reindex::run()?;
             Ok(())

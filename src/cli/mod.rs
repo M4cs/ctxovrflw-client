@@ -7,6 +7,7 @@ pub mod init_tui;
 pub mod login;
 pub mod logout;
 pub mod memories;
+pub mod model;
 pub mod recall;
 pub mod reindex;
 pub mod remember;
@@ -96,6 +97,12 @@ pub enum Command {
         action: GraphAction,
     },
 
+    /// Manage embedding models
+    Model {
+        #[command(subcommand)]
+        action: ModelAction,
+    },
+
     /// Rebuild embeddings for all memories (fixes missing semantic search results)
     Reindex,
 
@@ -142,6 +149,19 @@ pub enum GraphAction {
     Build,
     /// Show graph statistics
     Stats,
+}
+
+#[derive(Subcommand)]
+pub enum ModelAction {
+    /// List available embedding models
+    List,
+    /// Show current model
+    Current,
+    /// Switch to a different model (re-downloads and re-embeds all memories)
+    Switch {
+        /// Model ID to switch to
+        model_id: String,
+    },
 }
 
 #[derive(Subcommand)]

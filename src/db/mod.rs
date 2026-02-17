@@ -129,14 +129,13 @@ fn migrate(conn: &Connection) -> Result<()> {
     conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_memories_agent_id ON memories(agent_id);")?;
 
     // sqlite-vec virtual table for vector search
-    conn.execute_batch(
-        "
-        CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(
+    let dim = crate::embed::embedding_dim();
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memory_vectors USING vec0(
             id TEXT PRIMARY KEY,
-            embedding float[384]
-        );
-        ",
-    )?;
+            embedding float[{dim}]
+        );"
+    ))?;
 
     Ok(())
 }

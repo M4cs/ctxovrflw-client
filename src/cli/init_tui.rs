@@ -257,6 +257,11 @@ impl App {
     }
 
     fn check_model(&mut self) {
+        // TODO: Integrate with new configurable embedding models
+        // Show user a selection list from embed::models::MODELS instead of
+        // auto-downloading MiniLM. Store choice in config.embedding_model.
+        // Priority is the `ctxovrflw model switch` command for now.
+        
         let model_ok = crate::embed::Embedder::model_path()
             .ok()
             .map(|p| p.exists() && std::fs::metadata(&p).map(|m| m.len() > 1_000_000).unwrap_or(false))
