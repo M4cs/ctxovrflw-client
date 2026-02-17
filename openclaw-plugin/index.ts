@@ -172,7 +172,7 @@ function escapeForPrompt(text: string): string {
 // ============================================================================
 
 const ctxovrflwPlugin = {
-  id: "memory-ctxovrflw",
+  id: "openclaw-plugin",
   name: "Memory (ctxovrflw)",
   description:
     "ctxovrflw-backed memory — local-first semantic search, knowledge graph, cross-tool recall",
@@ -690,7 +690,7 @@ const ctxovrflwPlugin = {
     // ========================================================================
 
     api.registerService({
-      id: "memory-ctxovrflw",
+      id: "openclaw-plugin",
       start: async () => {
         const ok = await client.healthy();
         if (ok) {
