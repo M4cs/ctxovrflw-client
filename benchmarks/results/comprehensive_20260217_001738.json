@@ -1,0 +1,1323 @@
+{
+  "benchmark": "comprehensive_memory_mab",
+  "completed_at": "2026-02-17T00:17:38.391073",
+  "scenarios": 22,
+  "categories": [
+    "Contradiction",
+    "Entity Tracking",
+    "Long-term",
+    "Multi-hop",
+    "Personal",
+    "Preference Evolution",
+    "Social",
+    "Spatial",
+    "Temporal"
+  ],
+  "total_memories_seeded": 49,
+  "results": [
+    {
+      "scenario_id": "temporal_1_event_order",
+      "category": "Temporal",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 12845.649242401123,
+      "input_tokens": 15842,
+      "output_tokens": 136,
+      "total_tokens": 15978,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "v0.3.7",
+        "v0.3.8",
+        "v0.3.9",
+        "v0.4.0",
+        "v0.4.2"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about \"ctxovrflw\" or its releases. This doesn't appear to be a widely known product or project that I have knowledge about.\n\nCould you provide more context about what \"ctxovrflw\" is? For example:\n\n- Is it an open-source project on GitHub?\n- Is it a specific software tool",
+      "error": null
+    },
+    {
+      "scenario_id": "temporal_1_event_order",
+      "category": "Temporal",
+      "mode": "ctxovrflw",
+      "tool_calls": 4,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 30902.116298675537,
+      "input_tokens": 86810,
+      "output_tokens": 750,
+      "total_tokens": 87560,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "v0.3.7",
+        "v0.3.8",
+        "v0.3.9",
+        "v0.4.0",
+        "v0.4.2"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": true,
+      "answer_preview": "Here are the major ctxovrflw releases this month (February 2026), in chronological order:\n\n| # | Version | Date | Key Changes |\n|---|---------|------|-------------|\n| 1 | **v0.3.7** | Feb 8 | Mandatory E2E encryption for cloud sync; ONNX embedder singleton (recall latency **9300ms \u2192 3ms**) |\n| 2 | *",
+      "error": null
+    },
+    {
+      "scenario_id": "temporal_2_recency",
+      "category": "Temporal",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 7623.223543167114,
+      "input_tokens": 15832,
+      "output_tokens": 131,
+      "total_tokens": 15963,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "blocking_lock",
+        "panic",
+        "SSE",
+        "v0.4.4",
+        "February 16"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "\n\nI don't have access to any external memory, context systems, or conversation history beyond our current session. This is the start of our conversation, so I don't have any information about previous bugs you've fixed.\n\nTo help you find this information, I could:\n\n1. **Check your git history** \u2014 if",
+      "error": null
+    },
+    {
+      "scenario_id": "temporal_2_recency",
+      "category": "Temporal",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 15651.381254196167,
+      "input_tokens": 41450,
+      "output_tokens": 365,
+      "total_tokens": 41815,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "blocking_lock",
+        "panic",
+        "SSE",
+        "v0.4.4",
+        "February 16"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "The most recent bug fix was on **February 16, 2026**:\n\n**`tokio::sync::Mutex::blocking_lock()` panic in auto-sync task**\n\n- **Problem:** `blocking_lock()` was being called inside an async context, which caused a panic. This crashed the tokio worker threads and killed active SSE/MCP connections.\n- **",
+      "error": null
+    },
+    {
+      "scenario_id": "temporal_3_duration",
+      "category": "Temporal",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 5660.952568054199,
+      "input_tokens": 15844,
+      "output_tokens": 142,
+      "total_tokens": 15986,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "v0.2.5",
+        "v0.3.7",
+        "sync",
+        "encryption",
+        "weeks"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "\n\nI don't have specific information about what product or service you're referring to. Could you clarify which product, app, or service you're asking about? For example, are you asking about:\n\n- A specific cloud storage service (e.g., Dropbox, iCloud, Google Drive)?\n- A messaging app (e.g., WhatsApp",
+      "error": null
+    },
+    {
+      "scenario_id": "temporal_3_duration",
+      "category": "Temporal",
+      "mode": "ctxovrflw",
+      "tool_calls": 3,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 21226.773262023926,
+      "input_tokens": 41876,
+      "output_tokens": 370,
+      "total_tokens": 42246,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "v0.2.5",
+        "v0.3.7",
+        "sync",
+        "encryption",
+        "weeks"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's what I found:\n\n- **v0.2.5 (late January 2026)** \u2014 First version with cloud sync support\n- **v0.3.7 (February 8, 2026)** \u2014 Mandatory E2E encryption for all cloud sync\n\nSo it took roughly **~2 weeks** to go from the first cloud sync version to mandatory E2E encryption.\n\nIt's worth noting there ",
+      "error": null
+    },
+    {
+      "scenario_id": "entity_1_people_roles",
+      "category": "Entity Tracking",
+      "mode": "baseline",
+      "tool_calls": 56,
+      "tool_details": [
+        "Task",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Grep",
+        "Grep",
+        "Grep",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Grep",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Grep",
+        "Grep",
+        "Grep",
+        "Grep",
+        "Read",
+        "Read",
+        "Bash"
+      ],
+      "elapsed_ms": 123263.73791694641,
+      "input_tokens": 33426,
+      "output_tokens": 653,
+      "total_tokens": 34079,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "Max",
+        "Jake",
+        "Sarah",
+        "Tom",
+        "Lisa"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "## People Involved in ctxovrflw Development\n\n### Confirmed Developer\n\n| Person | Role | Evidence |\n|--------|------|----------|\n| **Max Bridgland** (aka \"Max B\", GitHub: [M4cs](https://github.com/M4cs)) | **Sole founder, creator, developer, and operator** | Named in legal docs (Terms of Service, Pri",
+      "error": null
+    },
+    {
+      "scenario_id": "entity_1_people_roles",
+      "category": "Entity Tracking",
+      "mode": "ctxovrflw",
+      "tool_calls": 4,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__list_entities",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 18412.48059272766,
+      "input_tokens": 65502,
+      "output_tokens": 763,
+      "total_tokens": 66265,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "Max",
+        "Jake",
+        "Sarah",
+        "Tom",
+        "Lisa"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's everyone involved in ctxovrflw development and their roles, based on what I have stored:\n\n---\n\n### Core Team\n\n| Person | Role |\n|--------|------|\n| **Max B** | **Founder & Primary Developer** \u2014 Software engineer based in Boston (EST). Building ctxovrflw as a profitable software product. Handl",
+      "error": null
+    },
+    {
+      "scenario_id": "entity_2_org_details",
+      "category": "Entity Tracking",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 8276.27944946289,
+      "input_tokens": 15836,
+      "output_tokens": 212,
+      "total_tokens": 16048,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "fintech",
+        "Lisa",
+        "DevOps",
+        "self-hosted",
+        "Rust Discord"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about \"ctxovrflw.\" This doesn't appear to be something I have knowledge about. It could be:\n\n1. **A project, tool, or repository** \u2014 If it's a codebase you're working with, I can search through it if you point me to the relevant files or repository.\n2. **A security conce",
+      "error": null
+    },
+    {
+      "scenario_id": "entity_2_org_details",
+      "category": "Entity Tracking",
+      "mode": "ctxovrflw",
+      "tool_calls": 3,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 16733.962535858154,
+      "input_tokens": 43403,
+      "output_tokens": 572,
+      "total_tokens": 43975,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "fintech",
+        "Lisa",
+        "DevOps",
+        "self-hosted",
+        "Rust Discord"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Based on what I have stored in memory, here are the companies and organizations that have expressed interest in ctxovrflw:\n\n### Enterprise Leads\n\n1. **Lisa's Fintech Startup** (~50 developers)\n   - Interested in ctxovrflw for **team shared memory**\n   - Want an **on-prem deployment** option\n   - Key",
+      "error": null
+    },
+    {
+      "scenario_id": "pref_evo_1_tech_choice",
+      "category": "Preference Evolution",
+      "mode": "baseline",
+      "tool_calls": 59,
+      "tool_details": [
+        "Task",
+        "TodoWrite",
+        "Grep",
+        "Grep",
+        "Grep",
+        "Bash",
+        "Bash",
+        "TodoWrite",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "TodoWrite",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "TodoWrite",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Bash",
+        "Grep",
+        "Bash",
+        "Bash",
+        "Grep",
+        "Read",
+        "Read",
+        "Grep",
+        "Read",
+        "Read",
+        "TodoWrite",
+        "Bash",
+        "Bash",
+        "Bash",
+        "TodoWrite"
+      ],
+      "elapsed_ms": 232761.25621795654,
+      "input_tokens": 35813,
+      "output_tokens": 1298,
+      "total_tokens": 37111,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "optional",
+        "mandatory",
+        "email",
+        "server-side salt"
+      ],
+      "missed_keywords": [
+        "security audit"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "## Database Encryption Evolution in ctxovrflw\n\nYour project's encryption approach underwent a remarkably rapid evolution over just **4 days** (Feb 13\u201316, 2026), progressing through six distinct phases:\n\n---\n\n### Phase 0 \u2014 No Encryption Needed *(Feb 13, 12:35)*\nThe project started as a **purely local",
+      "error": null
+    },
+    {
+      "scenario_id": "pref_evo_1_tech_choice",
+      "category": "Preference Evolution",
+      "mode": "ctxovrflw",
+      "tool_calls": 3,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 18499.906301498413,
+      "input_tokens": 43091,
+      "output_tokens": 780,
+      "total_tokens": 43871,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "optional",
+        "mandatory",
+        "email",
+        "security audit"
+      ],
+      "missed_keywords": [
+        "server-side salt"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's a clear timeline of how the encryption approach has evolved across the ctxovrflw project:\n\n---\n\n### **v0.1.x \u2014 No Encryption (Prototype Phase)**\n- Memories were stored and synced in **plaintext** on the server.\n- This was a \"move fast\" prototype phase \u2014 encryption wasn't a priority yet.\n\n### ",
+      "error": null
+    },
+    {
+      "scenario_id": "pref_evo_2_opinion_change",
+      "category": "Preference Evolution",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 6697.9241371154785,
+      "input_tokens": 15839,
+      "output_tokens": 149,
+      "total_tokens": 15988,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "skeptical",
+        "Moltbook",
+        "genuine",
+        "community member",
+        "advertiser"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a person named \"Max\" or their stance on using AI for marketing. This could refer to many different people, and I don't have specific context about who you're referring to.\n\nCould you provide more details, such as:\n\n- **Max's full name** or their role/company?\n- **W",
+      "error": null
+    },
+    {
+      "scenario_id": "pref_evo_2_opinion_change",
+      "category": "Preference Evolution",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 12280.734539031982,
+      "input_tokens": 41506,
+      "output_tokens": 428,
+      "total_tokens": 41934,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "skeptical",
+        "Moltbook",
+        "genuine",
+        "advertiser"
+      ],
+      "missed_keywords": [
+        "community member"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's Max's journey with AI for marketing:\n\n**Initially skeptical (January 2026):** Max was worried AI-driven marketing would come across as spammy and inauthentic \u2014 a reasonable concern given how much AI-generated slop floods the internet.\n\n**The experiment (February 2026):** He tried using Moltbo",
+      "error": null
+    },
+    {
+      "scenario_id": "multihop_1_cause_effect",
+      "category": "Multi-hop",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 11154.14834022522,
+      "input_tokens": 15835,
+      "output_tokens": 361,
+      "total_tokens": 16196,
+      "keyword_coverage": 0.16666666666666666,
+      "hit_keywords": [
+        "SSE"
+      ],
+      "missed_keywords": [
+        "blocking_lock",
+        "tokio",
+        "std::sync",
+        "MCP",
+        "recall"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any context about your benchmark results or runs. I don't have access to any benchmark data, logs, or previous conversations about this topic.\n\nTo help you figure out why your benchmark results improved between runs, I'd need more information. Could you share:\n\n1. **What benchmark** you",
+      "error": null
+    },
+    {
+      "scenario_id": "multihop_1_cause_effect",
+      "category": "Multi-hop",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 14137.375354766846,
+      "input_tokens": 41512,
+      "output_tokens": 449,
+      "total_tokens": 41961,
+      "keyword_coverage": 0.6666666666666666,
+      "hit_keywords": [
+        "tokio",
+        "std::sync",
+        "MCP",
+        "recall"
+      ],
+      "missed_keywords": [
+        "blocking_lock",
+        "SSE"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "The benchmark results improved dramatically because of a **mutex fix in the embedder**.\n\nHere's what happened:\n\n1. **First run (Feb 16 morning):** Scored only **69% coverage** \u2014 5 out of 11 scenarios failed with \"service unreachable\" errors when calling MCP recall. The global embedder was wrapped in",
+      "error": null
+    },
+    {
+      "scenario_id": "multihop_2_dependency_chain",
+      "category": "Multi-hop",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 7110.573053359985,
+      "input_tokens": 15834,
+      "output_tokens": 151,
+      "total_tokens": 15985,
+      "keyword_coverage": 0.16666666666666666,
+      "hit_keywords": [
+        "Jake"
+      ],
+      "missed_keywords": [
+        "ONNX",
+        "ARM64",
+        "embedder",
+        "singleton",
+        "Mutex"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "\n\nI don't have any context about who Jake is, what contribution they made, or what benchmark improvement you're referring to. This seems to be a question about your specific team, project, or organization's internal work.\n\nCould you provide more details, such as:\n\n1. **Which project or codebase** ar",
+      "error": null
+    },
+    {
+      "scenario_id": "multihop_2_dependency_chain",
+      "category": "Multi-hop",
+      "mode": "ctxovrflw",
+      "tool_calls": 3,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 16876.36113166809,
+      "input_tokens": 63093,
+      "output_tokens": 624,
+      "total_tokens": 63717,
+      "keyword_coverage": 0.8333333333333334,
+      "hit_keywords": [
+        "Jake",
+        "ONNX",
+        "ARM64",
+        "embedder",
+        "Mutex"
+      ],
+      "missed_keywords": [
+        "singleton"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's the chain of events connecting Jake's contribution to the benchmark improvement:\n\n1. **Jake's Contribution**: Jake contributed the **ONNX runtime CI fix for ARM64**, which enabled cross-platform ONNX builds. This was essential because the ONNX embedder powers the semantic/hybrid search in ctx",
+      "error": null
+    },
+    {
+      "scenario_id": "multihop_3_impact_analysis",
+      "category": "Multi-hop",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 8643.277168273926,
+      "input_tokens": 15840,
+      "output_tokens": 209,
+      "total_tokens": 16049,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "hybrid",
+        "knowledge graph",
+        "webhooks",
+        "consolidation",
+        "cloud sync",
+        "100"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "\n\n# Pro \u2192 Free Tier Downgrade: Features Lost\n\nI don't have specific knowledge of your application's tier structure, so I can't tell you exactly what features your Pro users would lose. This depends entirely on how your product defines its tiers.\n\nHowever, I can help you find this information in your",
+      "error": null
+    },
+    {
+      "scenario_id": "multihop_3_impact_analysis",
+      "category": "Multi-hop",
+      "mode": "ctxovrflw",
+      "tool_calls": 3,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__status"
+      ],
+      "elapsed_ms": 17025.834560394287,
+      "input_tokens": 41315,
+      "output_tokens": 597,
+      "total_tokens": 41912,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "hybrid",
+        "knowledge graph",
+        "webhooks",
+        "consolidation",
+        "cloud sync",
+        "100"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Based on what I have stored, here's exactly what a Pro user would lose if downgraded to Free tier:\n\n## Features Lost on Downgrade (Pro \u2192 Free)\n\n| Capability | Pro | Free |\n|---|---|---|\n| **Search** | Hybrid search (semantic + keyword + RRF) | Keyword search only |\n| **Memory Limit** | Unlimited | 1",
+      "error": null
+    },
+    {
+      "scenario_id": "longterm_1_origin",
+      "category": "Long-term",
+      "mode": "baseline",
+      "tool_calls": 9,
+      "tool_details": [
+        "Grep",
+        "WebSearch",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Read",
+        "Read",
+        "Read"
+      ],
+      "elapsed_ms": 34802.07276344299,
+      "input_tokens": 93040,
+      "output_tokens": 1045,
+      "total_tokens": 94085,
+      "keyword_coverage": 0.3333333333333333,
+      "hit_keywords": [
+        "sessions",
+        "persistent"
+      ],
+      "missed_keywords": [
+        "forgot",
+        "context window",
+        "private",
+        "cross-agent"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Now I have a clear picture. Here's the answer:\n\n## Why ctxovrflw Was Created\n\n**ctxovrflw** (short for **\"Context Overflow\"**) was created to solve a fundamental problem with AI coding agents: **every AI agent starts from scratch**.\n\n### The Original Motivation\n\nThe core frustration was this: when y",
+      "error": null
+    },
+    {
+      "scenario_id": "longterm_1_origin",
+      "category": "Long-term",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 14857.97643661499,
+      "input_tokens": 41442,
+      "output_tokens": 541,
+      "total_tokens": 41983,
+      "keyword_coverage": 0.3333333333333333,
+      "hit_keywords": [
+        "context window",
+        "persistent"
+      ],
+      "missed_keywords": [
+        "forgot",
+        "sessions",
+        "private",
+        "cross-agent"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Great \u2014 I have solid context on this. Here's the story:\n\n## Why ctxovrflw Was Created\n\n**The core frustration:** Every AI coding session started from zero. Whether using Claude Code, Cursor, Copilot, or any other AI tool \u2014 none of them remembered decisions, preferences, or context from yesterday. Yo",
+      "error": null
+    },
+    {
+      "scenario_id": "longterm_2_early_decision",
+      "category": "Long-term",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 13312.382459640503,
+      "input_tokens": 15836,
+      "output_tokens": 452,
+      "total_tokens": 16288,
+      "keyword_coverage": 0.6,
+      "hit_keywords": [
+        "performance",
+        "memory safety",
+        "GC"
+      ],
+      "missed_keywords": [
+        "single binary",
+        "SQLite"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any context about your project or the specific decision to use Rust for a daemon. I don't know which project you're referring to or what discussions led to that technology choice.\n\nTo help answer this question, I could:\n\n1. **Search your codebase** for documentation, ADRs (Architecture ",
+      "error": null
+    },
+    {
+      "scenario_id": "longterm_2_early_decision",
+      "category": "Long-term",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 16036.213874816895,
+      "input_tokens": 41446,
+      "output_tokens": 540,
+      "total_tokens": 41986,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "performance",
+        "memory safety",
+        "SQLite",
+        "GC"
+      ],
+      "missed_keywords": [
+        "single binary"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Great, I have the full reasoning stored. Here's why Rust was chosen for the ctxovrflw daemon:\n\n1. **Sub-millisecond recall latency** \u2014 No garbage collector pauses means recall stays consistently fast (~3ms). Python's GC and Go's stop-the-world pauses would introduce unpredictable latency spikes, whi",
+      "error": null
+    },
+    {
+      "scenario_id": "longterm_3_name",
+      "category": "Long-term",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 6711.557626724243,
+      "input_tokens": 15833,
+      "output_tokens": 139,
+      "total_tokens": 15972,
+      "keyword_coverage": 0.25,
+      "hit_keywords": [
+        "context overflow"
+      ],
+      "missed_keywords": [
+        "forget",
+        "catches",
+        "stackoverflow"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about something called \"ctxovrflw.\" I'm not aware of the origin of that name.\n\nCould you provide more context? For example:\n\n- Is it a software project, library, or tool?\n- Is it something in your current codebase?\n- Is it a username or organization?\n\nThe name looks like",
+      "error": null
+    },
+    {
+      "scenario_id": "longterm_3_name",
+      "category": "Long-term",
+      "mode": "ctxovrflw",
+      "tool_calls": 1,
+      "tool_details": [
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 13640.844345092773,
+      "input_tokens": 40909,
+      "output_tokens": 441,
+      "total_tokens": 41350,
+      "keyword_coverage": 0.75,
+      "hit_keywords": [
+        "context overflow",
+        "catches",
+        "stackoverflow"
+      ],
+      "missed_keywords": [
+        "forget"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Great, I have this stored! Here's the story behind the name **ctxovrflw**:\n\n**ctxovrflw** = **\"context overflow\"**\n\nThe name is a play on a core problem in AI tooling: **AI context windows have limited space**, and when they overflow, knowledge is lost. ctxovrflw catches what \"overflows\" from those ",
+      "error": null
+    },
+    {
+      "scenario_id": "social_1_reaction",
+      "category": "Social",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 6958.304405212402,
+      "input_tokens": 15832,
+      "output_tokens": 168,
+      "total_tokens": 16000,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "alarmed",
+        "0.0.0.0",
+        "P0",
+        "prioritized",
+        "one-line",
+        "127.0.0.1"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a specific security audit or team reaction you're referring to. This could be related to:\n\n- An internal document or conversation in your organization\n- A specific project or codebase you're working on\n- A meeting or report I don't have access to\n\nCould you provide",
+      "error": null
+    },
+    {
+      "scenario_id": "social_1_reaction",
+      "category": "Social",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11886.622428894043,
+      "input_tokens": 41328,
+      "output_tokens": 400,
+      "total_tokens": 41728,
+      "keyword_coverage": 0.5,
+      "hit_keywords": [
+        "0.0.0.0",
+        "P0",
+        "127.0.0.1"
+      ],
+      "missed_keywords": [
+        "alarmed",
+        "prioritized",
+        "one-line"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Based on what I have stored, here's what happened with the security audit:\n\n**Max's Reaction (the founder):**\n- It was a **\"holy shit moment\"** when the audit revealed that the daemon was binding to `0.0.0.0` \u2014 meaning **anyone on the local network could access users' memories**. \n- He immediately c",
+      "error": null
+    },
+    {
+      "scenario_id": "social_2_frustration",
+      "category": "Social",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 10213.404893875122,
+      "input_tokens": 15832,
+      "output_tokens": 298,
+      "total_tokens": 16130,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "PIN",
+        "cross-device",
+        "3 days",
+        "email salt",
+        "subtle"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "That's a very open-ended question, and I don't have context about what specific development project or codebase you're referring to. I can interpret your question a few ways:\n\n1. **If you're asking about a specific project in your current codebase** \u2014 I'd need to look at your git history, issue trac",
+      "error": null
+    },
+    {
+      "scenario_id": "social_2_frustration",
+      "category": "Social",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 12728.137016296387,
+      "input_tokens": 41840,
+      "output_tokens": 447,
+      "total_tokens": 42287,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "PIN",
+        "cross-device",
+        "3 days",
+        "subtle"
+      ],
+      "missed_keywords": [
+        "email salt"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "The most frustrating technical issue during ctxovrflw development was the **cross-device PIN verification bug**. Here's the breakdown:\n\n**The Problem:** `derive_key()` used the user's email as the PBKDF2 salt. Email casing or encoding differed slightly between devices, which meant the derived key wa",
+      "error": null
+    },
+    {
+      "scenario_id": "contradiction_1_corrected",
+      "category": "Contradiction",
+      "mode": "baseline",
+      "tool_calls": 4,
+      "tool_details": [
+        "WebSearch",
+        "WebSearch",
+        "WebSearch",
+        "WebSearch"
+      ],
+      "elapsed_ms": 20656.592845916748,
+      "input_tokens": 51642,
+      "output_tokens": 393,
+      "total_tokens": 52035,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "PostgreSQL",
+        "Drizzle",
+        "Railway"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "I wasn't able to find any information about a project or service called **\"ctxovrflw\"** through my searches. The term doesn't appear in web search results, GitHub repositories, or any other indexed sources.\n\nI don't want to guess or make up an answer. Could you provide more context about what **ctxo",
+      "error": null
+    },
+    {
+      "scenario_id": "contradiction_1_corrected",
+      "category": "Contradiction",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 10301.692485809326,
+      "input_tokens": 41522,
+      "output_tokens": 269,
+      "total_tokens": 41791,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "PostgreSQL",
+        "Drizzle",
+        "Railway"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "The ctxovrflw cloud API uses **PostgreSQL** (via Drizzle ORM, running on Railway).\n\nInterestingly, the original plan was to use **SQLite** for both the local daemon and the cloud API to keep things simple and consistent. However, SQLite couldn't handle concurrent write access from multiple API insta",
+      "error": null
+    },
+    {
+      "scenario_id": "contradiction_2_updated",
+      "category": "Contradiction",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 5283.675670623779,
+      "input_tokens": 15829,
+      "output_tokens": 86,
+      "total_tokens": 15915,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "$15",
+        "originally",
+        "$10",
+        "knowledge graph",
+        "webhooks"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Based on my knowledge, the **Claude Pro** tier (Anthropic's subscription plan) costs **$20 per month**.\n\nThis gives you access to Claude with higher usage limits compared to the free tier, priority access during high-traffic periods, and access to the latest models.\n\nIf you're asking about a differe",
+      "error": null
+    },
+    {
+      "scenario_id": "contradiction_2_updated",
+      "category": "Contradiction",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__status"
+      ],
+      "elapsed_ms": 8593.867778778076,
+      "input_tokens": 40835,
+      "output_tokens": 222,
+      "total_tokens": 41057,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "$15",
+        "originally",
+        "$10",
+        "knowledge graph",
+        "webhooks"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "The **Pro tier** for ctxovrflw costs **$15/month**.\n\nIt was originally priced at $10/month but was raised to $15/month after the addition of several significant features, including:\n\n- **Hybrid search** (semantic + keyword + RRF)\n- **Unlimited memories**\n- **Knowledge graph** (entities + relations)\n",
+      "error": null
+    },
+    {
+      "scenario_id": "spatial_1_infrastructure",
+      "category": "Spatial",
+      "mode": "baseline",
+      "tool_calls": 59,
+      "tool_details": [
+        "Task",
+        "Bash",
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash"
+      ],
+      "elapsed_ms": 141578.9713859558,
+      "input_tokens": 37165,
+      "output_tokens": 1975,
+      "total_tokens": 39140,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "Railway",
+        "GitHub Actions",
+        "PostgreSQL",
+        "locally"
+      ],
+      "missed_keywords": [
+        "Vercel"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "## Full Deployment Infrastructure \u2014 ctxovrflw\n\nHere is the complete deployment architecture, covering where every component runs:\n\n---\n\n### Architecture Overview\n\nThe system follows a **hybrid local-and-cloud architecture** with three tiers: a local Rust client/daemon, a cloud API backend, and stati",
+      "error": null
+    },
+    {
+      "scenario_id": "spatial_1_infrastructure",
+      "category": "Spatial",
+      "mode": "ctxovrflw",
+      "tool_calls": 3,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 18449.626922607422,
+      "input_tokens": 43377,
+      "output_tokens": 840,
+      "total_tokens": 44217,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "Railway",
+        "Vercel",
+        "GitHub Actions",
+        "PostgreSQL"
+      ],
+      "missed_keywords": [
+        "locally"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's the full deployment infrastructure for **ctxovrflw**, broken down by component:\n\n---\n\n### \ud83d\udda5\ufe0f Daemon (Local Client)\n- **Runs on:** The user's local machine\n- **Process management:** `systemd` service on Linux, `launchd` on macOS\n- **Built with:** Rust (chosen for sub-millisecond recall latency",
+      "error": null
+    },
+    {
+      "scenario_id": "spatial_2_dev_setup",
+      "category": "Spatial",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 6048.329830169678,
+      "input_tokens": 15829,
+      "output_tokens": 158,
+      "total_tokens": 15987,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "VPS",
+        "Hostinger",
+        "WSL",
+        "OpenClaw",
+        "Telegram",
+        "VS Code"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about \"Max's development environment setup.\" I don't have access to any context about a person named Max or their development environment.\n\nCould you clarify what you're referring to? For example:\n\n- **Are you asking about a specific person's setup** in your team or orga",
+      "error": null
+    },
+    {
+      "scenario_id": "spatial_2_dev_setup",
+      "category": "Spatial",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 10294.915914535522,
+      "input_tokens": 41524,
+      "output_tokens": 346,
+      "total_tokens": 41870,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "VPS",
+        "Hostinger",
+        "WSL",
+        "OpenClaw",
+        "Telegram",
+        "VS Code"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's Max's development environment setup:\n\n- **Primary machine**: VPS at Hostinger (`srv1370565.hstgr.cloud`, Linux x64)\n- **Secondary machine**: WSL on a Windows desktop\n- **Editor**: VS Code\n- **Rust toolchain**: via `rustup`\n- **Node.js**: via `nvm`\n- **AI assistant**: OpenClaw AI assistant nam",
+      "error": null
+    },
+    {
+      "scenario_id": "personal_1_schedule",
+      "category": "Personal",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 5583.647012710571,
+      "input_tokens": 15833,
+      "output_tokens": 139,
+      "total_tokens": 15972,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "EST",
+        "Boston",
+        "9am",
+        "midnight",
+        "async"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a person named Max or their availability. I don't have access to anyone's calendar, schedule, or contact information.\n\nCould you provide more context about who Max is? For example:\n\n- **Is Max a colleague?** You might check your team's shared calendar or Slack stat",
+      "error": null
+    },
+    {
+      "scenario_id": "personal_1_schedule",
+      "category": "Personal",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 9365.769863128662,
+      "input_tokens": 40975,
+      "output_tokens": 269,
+      "total_tokens": 41244,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "EST",
+        "Boston",
+        "midnight",
+        "async"
+      ],
+      "missed_keywords": [
+        "9am"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's what I have on Max's availability:\n\n- **Timezone:** EST (Boston)\n- **Typically active:** 9 AM \u2013 midnight EST\n- **Deep work blocks:** Usually mornings, **10 AM \u2013 1 PM EST** \u2014 don't expect instant replies during this time\n- **Avoid messaging:** **1 AM \u2013 8 AM EST** unless it's urgent\n- **Communi",
+      "error": null
+    },
+    {
+      "scenario_id": "personal_2_goals",
+      "category": "Personal",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 8056.7803382873535,
+      "input_tokens": 15838,
+      "output_tokens": 145,
+      "total_tokens": 15983,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "wealth",
+        "software",
+        "revenue",
+        "developer tools",
+        "financial independence"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a person named Max or a project/company called \"ctxovrflw.\" This isn't something I have context on from our conversation or from any files I've been asked to look at.\n\nCould you provide more context? For example:\n\n- **Is this related to a codebase** you're working ",
+      "error": null
+    },
+    {
+      "scenario_id": "personal_2_goals",
+      "category": "Personal",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11650.007724761963,
+      "input_tokens": 40951,
+      "output_tokens": 366,
+      "total_tokens": 41317,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "wealth",
+        "software",
+        "revenue",
+        "developer tools",
+        "financial independence"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": true,
+      "answer_preview": "Based on what I have stored, here's what I know about Max's long-term career goals beyond ctxovrflw:\n\n- **Primary drive:** Building wealth through software \u2014 not through VC-funded growth, but through **profitable, bootstrapped software products**.\n- **Multiple revenue streams:** ctxovrflw is the cur",
+      "error": null
+    },
+    {
+      "scenario_id": "personal_3_pet_peeves",
+      "category": "Personal",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 6737.70546913147,
+      "input_tokens": 15832,
+      "output_tokens": 149,
+      "total_tokens": 15981,
+      "keyword_coverage": 0.2,
+      "hit_keywords": [
+        "context"
+      ],
+      "missed_keywords": [
+        "sycophancy",
+        "verbose",
+        "permission",
+        "sessions"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a specific person named \"Max\" or their opinions about working with AI assistants. There are many people named Max, and I don't know which one you're referring to or what their experiences have been.\n\nCould you provide more context? For example:\n\n- **Is Max someone ",
+      "error": null
+    },
+    {
+      "scenario_id": "personal_3_pet_peeves",
+      "category": "Personal",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11136.139154434204,
+      "input_tokens": 40984,
+      "output_tokens": 381,
+      "total_tokens": 41365,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "sycophancy",
+        "verbose",
+        "permission",
+        "context",
+        "sessions"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Great, I found exactly what you're looking for! Here's what annoys Max about working with AI assistants:\n\n1. **Sycophancy** \u2014 He hates \"yes man\" behavior. He wants honest pushback, not constant agreement.\n\n2. **Verbose responses** \u2014 His motto is *\"say it once, say it well.\"* He doesn't want long-win",
+      "error": null
+    }
+  ]
+}

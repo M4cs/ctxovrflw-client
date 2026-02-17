@@ -1,0 +1,1009 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ctxovrflw Benchmark Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        .header .subtitle {
+            color: #6c757d;
+            font-size: 1.1em;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .metric-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 6px;
+            border-left: 4px solid #007bff;
+        }
+        .metric-title {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 10px;
+        }
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .chart-section {
+            margin: 40px 0;
+        }
+        .chart-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #2c3e50;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 20px;
+        }
+        .chart-interpretation {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 6px;
+            border-left: 4px solid #2196f3;
+            margin-bottom: 20px;
+        }
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .results-table th,
+        .results-table td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .results-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .success {
+            color: #28a745;
+        }
+        .mode-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        .mode-baseline { background: #ffc107; color: #000; }
+        .mode-directed { background: #17a2b8; color: #fff; }
+        .mode-ctxovrflw { background: #28a745; color: #fff; }
+        .raw-data {
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        .raw-data details {
+            margin-top: 10px;
+        }
+        .raw-data pre {
+            background: #ffffff;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>ctxovrflw Benchmark Report</h1>
+            <div class="subtitle">
+                Generated on 2026-02-16 18:21:02 UTC<br>
+                Total Scenarios: 6 | Total Runs: 18
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            
+            <div class="metric-card">
+                <div class="metric-title">Baseline Mode</div>
+                <div class="metric-value">0.77</div>
+                <div>Average Score</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-title">Directed Mode</div>
+                <div class="metric-value">0.83</div>
+                <div>Average Score</div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="metric-title">Ctxovrflw Mode</div>
+                <div class="metric-value">0.74</div>
+                <div>Average Score</div>
+            </div>
+            
+        </div>
+
+        <div class="chart-section">
+            <div class="chart-title">Tool Call Efficiency</div>
+            <div class="chart-container">
+                <canvas id="toolCallsChart"></canvas>
+            </div>
+            <div class="chart-interpretation">
+                <strong>Key Insight:</strong> ctxovrflw mode should show significantly fewer tool calls due to semantic memory, 
+                avoiding redundant file reads and searches.
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <div class="chart-title">Response Latency</div>
+            <div class="chart-container">
+                <canvas id="latencyChart"></canvas>
+            </div>
+            <div class="chart-interpretation">
+                <strong>Key Insight:</strong> Faster response times indicate more efficient information retrieval. 
+                ctxovrflw should show lower latency due to direct memory access.
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <div class="chart-title">Token Efficiency</div>
+            <div class="chart-container">
+                <canvas id="tokenChart"></canvas>
+            </div>
+            <div class="chart-interpretation">
+                <strong>Key Insight:</strong> Lower token usage indicates more efficient context utilization. 
+                ctxovrflw should use fewer tokens by avoiding large file context injection.
+            </div>
+        </div>
+
+        <div class="chart-section">
+            <div class="chart-title">Accuracy Scores</div>
+            <div class="chart-container">
+                <canvas id="scoreChart"></canvas>
+            </div>
+            <div class="chart-interpretation">
+                <strong>Key Insight:</strong> Higher scores indicate better answer quality. 
+                All modes should perform similarly on accuracy, proving ctxovrflw doesn't sacrifice quality for efficiency.
+            </div>
+        </div>
+
+        <div class="raw-data">
+            <h3>Detailed Results</h3>
+            <details>
+                <summary>Click to expand raw data (JSON)</summary>
+                <pre>{
+  "completed_at": "2026-02-16T18:17:53.125813",
+  "results": [
+    {
+      "composite_score": 0.8333333333333334,
+      "elapsed_ms": 23469.958066940308,
+      "error": null,
+      "final_answer": "Here\u0027s a detailed breakdown of the encryption used by ctxovrflw for cloud sync:\n\n## Encryption Algorithm\n\n**AES-256-GCM** (Galois/Counter Mode) \u2014 each memory is encrypted individually with a unique 12-byte nonce. The ciphertext format is:\n\n```\n[12-byte nonce] [ciphertext] [GCM authentication tag]\n```\n\nThe implementation uses the `ring` crate (`ring::aead::AES_256_GCM`) in Rust. Encrypted data is base64-encoded for transport.\n\n## PBKDF2 Parameters\n\nThe 256-bit encryption key is derived from the user\u0027s **sync PIN** using PBKDF2 with these parameters:\n\n| Parameter | Value |\n|---|---|\n| **Algorithm** | PBKDF2-HMAC-SHA256 (`ring::pbkdf2::PBKDF2_HMAC_SHA256`) |\n| **Iterations** | **600,000** |\n| **Key length** | 32 bytes (256 bits) |\n| **Salt** | `\"ctxovrflw-zk-v1-\"` prefix + server-provided 32-byte random hex string |\n| **Input** | User\u0027s sync PIN (as UTF-8 bytes) |\n\nThe salt is constructed by concatenating the fixed prefix `ctxovrflw-zk-v1-` with a random 32-byte hex salt generated by the server on first PIN setup, ensuring each user gets a unique derived key even if PINs collide.\n\n## Interesting discrepancy\n\nThere\u0027s a **mismatch between the code and the documentation**: the security docs page (`docs/content/docs/architecture/security.mdx`) claims the key derivation uses **Argon2id**, but the actual implementation in `src/crypto/mod.rs` clearly uses **PBKDF2-HMAC-SHA256** with 600,000 iterations. The code is the source of truth here.",
+      "input_tokens": 61422,
+      "keyword_score": 0.8333333333333334,
+      "llm_judge_score": null,
+      "mode": "baseline",
+      "output_tokens": 922,
+      "platform": "claude",
+      "scenario_id": "ar_1_encryption",
+      "timestamp": "2026-02-16 17:53:13 UTC",
+      "tool_call_count": 5,
+      "tool_call_names": [
+        "Grep",
+        "Grep",
+        "Read",
+        "Read",
+        "Read"
+      ],
+      "total_tokens": 62344
+    },
+    {
+      "composite_score": 0.9166666666666666,
+      "elapsed_ms": 16265.405416488647,
+      "error": null,
+      "final_answer": "Based on the code in `src/crypto/mod.rs`, here\u0027s the encryption setup:\n\n## Encryption Algorithm\n\n**AES-256-GCM** \u2014 used for encrypting each memory before cloud sync.\n\n- Each memory gets a **unique 12-byte nonce** generated from a cryptographically secure random source (`SystemRandom`)\n- The encrypted output format is: `[12-byte nonce][ciphertext + GCM auth tag]`\n- For string encryption/decryption, the binary ciphertext is **base64-encoded**\n\n## PBKDF2 Parameters\n\n| Parameter | Value |\n|---|---|\n| **Algorithm** | PBKDF2-HMAC-SHA256 |\n| **Iterations** | 600,000 |\n| **Output key length** | 256 bits (32 bytes) |\n| **Salt** | Prefixed with `ctxovrflw-zk-v1-` + a server-provided 32-byte hex salt |\n\nThe key derivation flow:\n1. The user provides a **sync PIN**\n2. The server provides a **random 32-byte hex salt** (generated on first PIN setup)\n3. The salt is constructed by concatenating the prefix `b\"ctxovrflw-zk-v1-\"` with the decoded server salt bytes\n4. PBKDF2 derives a 256-bit key from `(pin_bytes, combined_salt, 600_000 iterations)`\n\n## Zero-Knowledge Design\n\nThe system is explicitly designed so the **server never sees plaintext**:\n- Memories are encrypted client-side before push and decrypted after pull\n- A **SHA-256 content hash** is computed on plaintext for sync consistency verification without exposing content\n- A **PIN verifier** (the encryption of the string `\"ctxovrflw-pin-verify\"`) is stored in config to validate the PIN locally without round-tripping to the server\n\nThe crypto implementation uses the **`ring`** crate (v0.17), which is a well-regarded Rust cryptography library.",
+      "input_tokens": 22423,
+      "keyword_score": 0.9166666666666666,
+      "llm_judge_score": null,
+      "mode": "directed",
+      "output_tokens": 485,
+      "platform": "claude",
+      "scenario_id": "ar_1_encryption",
+      "timestamp": "2026-02-16 17:53:31 UTC",
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "total_tokens": 22908
+    },
+    {
+      "composite_score": 0.75,
+      "elapsed_ms": 40112.210750579834,
+      "error": null,
+      "final_answer": "Here\u0027s a comprehensive answer from ctxovrflw\u0027s semantic memory:\n\n## Encryption Algorithm\n\nctxovrflw uses **AES-256-GCM** for encrypting memories during sync. This is an authenticated encryption scheme, meaning it provides both confidentiality and integrity/authenticity in one operation.\n\n## PBKDF2 Key Derivation Parameters\n\n| Parameter | Value |\n|-----------|-------|\n| **Algorithm** | PBKDF2 |\n| **Hash function** | SHA-256 |\n| **Iterations** | **600,000** |\n| **Salt prefix** | `\u0027ctxovrflw-zk-v1-\u0027` |\n| **Salt source** | Prefix + server-generated random salt |\n\nThe salt is constructed by prepending the string `\u0027ctxovrflw-zk-v1-\u0027` to a **server-generated random salt** before feeding it into PBKDF2. The derived key is used to encrypt/decrypt memories locally using the user\u0027s PIN.\n\n## Key Design Notes\n\n- **Zero-knowledge architecture**: The server only stores encrypted blobs \u2014 it **cannot** decrypt user memories.\n- **Client-side encryption**: All encryption/decryption happens locally before upload.\n- **Salt evolution**: Prior to **v0.4.2**, the user\u0027s email was used as the salt (now deprecated for security). The current method uses a server-generated random salt, which is stronger against targeted attacks.\n- **Sync protocol**: Supports incremental sync with conflict resolution, uploading only locally-encrypted memory deltas.",
+      "input_tokens": 33827,
+      "keyword_score": 0.75,
+      "llm_judge_score": null,
+      "mode": "ctxovrflw",
+      "output_tokens": 586,
+      "platform": "claude",
+      "scenario_id": "ar_1_encryption",
+      "timestamp": "2026-02-16 17:54:12 UTC",
+      "tool_call_count": 3,
+      "tool_call_names": [
+        "Task",
+        "Bash",
+        "Bash"
+      ],
+      "total_tokens": 34413
+    },
+    {
+      "composite_score": 0.7272727272727273,
+      "elapsed_ms": 69149.87564086914,
+      "error": null,
+      "final_answer": "## Hybrid Search in ctxovrflw\n\nThe hybrid search combines **three retrieval methods** and fuses their results using **Reciprocal Rank Fusion (RRF)**. Here\u0027s how it works:\n\n---\n\n### Three Search Sources\n\n1. **Semantic (Vector) Search** \u2014 Uses `sqlite-vec` with 384-dimensional embeddings from the `all-MiniLM-L6-v2` ONNX model. Queries the `memory_vectors` virtual table via KNN, converts distance to a relevance score (`score = 1.0 - (distance\u00b2 / 2.0)`), and filters out results below a `MIN_SEMANTIC_SCORE` of **0.15**.\n\n2. **Keyword (Full-Text) Search** \u2014 Uses **SQLite FTS5** on the `memories_fts` virtual table. The query is sanitized (stopwords removed, tokens quoted, joined with `OR`), and the FTS5 negative rank is negated to produce a positive score.\n\n3. **Subject/Tag Matching** \u2014 Extracts words from the query and matches them against memory subjects and tags. Subjects with \u003e15 associated memories are skipped as too generic.\n\n---\n\n### Fusion Method: Reciprocal Rank Fusion (RRF)\n\nThe fusion algorithm is **RRF** with a constant **k = 60.0**, defined in `src/db/search.rs`:\n\n```\nRRF score = \u03a3  1 / (k + rank_i + 1)\n```\n\n**How it works:**\n\n1. **Fetch phase** \u2014 Each source fetches `(limit \u00d7 3).max(15)` candidates (more than needed to give headroom).\n\n2. **Score accumulation** \u2014 A `HashMap\u003cmemory_id, f64\u003e` accumulates RRF scores. For each result set (semantic, keyword, subject), every result\u0027s rank contributes:\n   ```rust\n   rrf_score = 1.0 / (RRF_K + rank as f64 + 1.0)  // RRF_K = 60.0\n   scores[memory.id] += rrf_score;\n   ```\n\n3. **Final ranking** \u2014 All memories are sorted by accumulated RRF score (descending) and truncated to the requested limit.\n\nMemories appearing in **multiple** result sets accumulate scores from each, giving them a natural boost. Memories found by only one method still appear with their single-source contribution.\n\n---\n\n### Key Configuration Parameters\n\n| Parameter | Value | Purpose |\n|---|---|---|\n| `RRF_K` | `60.0` | RRF smoothing constant |\n| `MIN_SEMANTIC_SCORE` | `0.15` | Minimum threshold for vector results |\n| Fetch multiplier | `limit \u00d7 3` (min 15) | Over-fetching for better fusion candidates |\n| Subject popularity cap | 15 memories | Skip overly generic subjects |\n| Embedding dimension | 384 | all-MiniLM-L6-v2 output |\n\n---\n\n### Fallback Logic\n\n- If semantic search fails or all results are below threshold \u2192 falls back to **keyword-only**\n- If keyword search returns nothing \u2192 uses **semantic-only**\n- If both are empty \u2192 returns empty results\n\nThis design ensures **graceful degradation** \u2014 the system always returns the best results available even when one retrieval method underperforms.",
+      "input_tokens": 34996,
+      "keyword_score": 0.7272727272727273,
+      "llm_judge_score": null,
+      "mode": "baseline",
+      "output_tokens": 1087,
+      "platform": "claude",
+      "scenario_id": "ar_2_hybrid_search",
+      "timestamp": "2026-02-16 17:55:22 UTC",
+      "tool_call_count": 17,
+      "tool_call_names": [
+        "Task",
+        "Bash",
+        "Glob",
+        "Grep",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Grep",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Grep",
+        "Read",
+        "Read"
+      ],
+      "total_tokens": 36083
+    },
+    {
+      "composite_score": 0.9090909090909091,
+      "elapsed_ms": 84783.91098976135,
+      "error": null,
+      "final_answer": "Here\u0027s a complete breakdown of how hybrid search works in ctxovrflw:\n\n## Hybrid Search Implementation\n\nThe entire search system lives in **`src/db/search.rs`** and uses **Reciprocal Rank Fusion (RRF)** as its fusion method.\n\n### Three Search Sources\n\nThe hybrid search combines results from **three independent sources**:\n\n1. **Semantic Search** (`semantic_search`) \u2014 Vector-based KNN search using **sqlite-vec**. It takes a query embedding (384-dim, from the all-MiniLM-L6-v2 model), computes distances, and converts them to similarity scores with `score = 1.0 - (distance\u00b2 / 2.0)`. Results below a `MIN_SEMANTIC_SCORE` threshold of **0.15** are filtered out as noise.\n\n2. **Keyword Search** (`keyword_search`) \u2014 Full-text search using **SQLite FTS5**. The query is sanitized by removing ~80 common English stopwords, wrapping remaining tokens in quotes, and joining them with `OR` for broader recall. FTS5 rank values (which are negative, lower = better) are flipped to positive scores.\n\n3. **Subject/Tag Matching** (`extract_subject_matches`) \u2014 A metadata-based signal. It tokenizes the query, looks for matches against known subject names and JSON-stored tags, and returns matching memories. Subjects with \u003e15 memories are skipped as too generic.\n\n### Fusion Method: Reciprocal Rank Fusion (RRF)\n\nThe fusion algorithm is **RRF with k=60** (the standard constant). The formula for each result from each list is:\n\n```\nRRF_score = 1 / (k + rank + 1)    where k = 60\n```\n\nHere\u0027s how it works step-by-step:\n\n1. **Over-fetch candidates**: Each source retrieves `limit \u00d7 3` results (minimum 15) to give the fusion algorithm more material to work with.\n\n2. **Score accumulation**: A `HashMap\u003cString, f64\u003e` accumulates RRF scores keyed by memory ID. Each source contributes independently:\n   - Semantic results: ranked by vector similarity \u2192 RRF score by rank position\n   - Keyword results: ranked by FTS5 relevance \u2192 RRF score by rank position  \n   - Subject/tag results: ranked by recency \u2192 RRF score by rank position\n\n3. **Additive boosting**: If the same memory appears in **multiple** lists, its RRF scores are **summed**. This means items found by both semantic and keyword search get naturally boosted over items found by only one method.\n\n4. **Sort and truncate**: Final results are sorted by combined RRF score (highest first) and truncated to the requested `limit`.\n\n### Fallback Logic\n\nThe function includes graceful degradation:\n- If **both** semantic and keyword results are empty \u2192 return empty\n- If **only semantic** is empty \u2192 return keyword results directly (no fusion needed)\n- If **only keyword** is empty \u2192 return semantic results directly\n- Otherwise \u2192 full RRF fusion\n\n### Why RRF?\n\nAs the code comments note: *\"This dramatically improves recall quality by catching results that one method misses but the other finds.\"* RRF is a rank-based fusion method (as opposed to score-based), which makes it robust because it doesn\u0027t need to normalize scores across fundamentally different scoring systems (cosine similarity vs. BM25/FTS5 rank).",
+      "input_tokens": 90907,
+      "keyword_score": 0.9090909090909091,
+      "llm_judge_score": null,
+      "mode": "directed",
+      "output_tokens": 1446,
+      "platform": "claude",
+      "scenario_id": "ar_2_hybrid_search",
+      "timestamp": "2026-02-16 17:56:48 UTC",
+      "tool_call_count": 29,
+      "tool_call_names": [
+        "Glob",
+        "Glob",
+        "Glob",
+        "Task",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Grep",
+        "Read",
+        "Glob",
+        "Grep",
+        "Read",
+        "Read",
+        "Read",
+        "Grep",
+        "Glob",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read"
+      ],
+      "total_tokens": 92353
+    },
+    {
+      "composite_score": 0.8181818181818182,
+      "elapsed_ms": 71376.69968605042,
+      "error": null,
+      "final_answer": "Now I have the complete picture. Here\u0027s how the hybrid search works:\n\n---\n\n## Hybrid Search in ctxovrflw\n\nThe hybrid search combines **three** result sources using **Reciprocal Rank Fusion (RRF)** to dramatically improve recall quality.\n\n### The Three Search Sources\n\n1. **Semantic Search** (vector-based) \u2014 Uses `sqlite-vec` for KNN cosine similarity search against stored embeddings. Distances are converted to similarity scores via `score = 1.0 - (distance\u00b2 / 2.0)`, and results below a minimum threshold (`MIN_SEMANTIC_SCORE = 0.15`) are filtered as noise. It fetches 4\u00d7 the requested limit (capped at 200) to give room for filtering.\n\n2. **Keyword Search** (FTS5-based) \u2014 Uses SQLite\u0027s FTS5 full-text search with BM25 ranking. Queries are sanitized by removing stopwords, quoting individual tokens, and joining them with `OR` for broader recall. The FTS5 rank (which is negative, lower = better) is flipped to a positive score.\n\n3. **Subject/Tag Matching** \u2014 Extracts potential subject and tag matches from the query text. It looks for known subjects that appear as words in the query (skipping overly generic subjects with \u003e15 memories) and searches for memories whose tags match query words. This provides a metadata-based relevance signal.\n\n### Fusion Method: Reciprocal Rank Fusion (RRF)\n\nThe fusion method is **Reciprocal Rank Fusion** with constant **k = 60** (the standard value from the original RRF paper).\n\nThe formula for each result is:\n\n```\nRRF_score = \u03a3 1 / (k + rank_i + 1)\n```\n\nwhere `rank_i` is the item\u0027s position (0-indexed) in each result list it appears in, and `k = 60`.\n\n**How it works:**\n- Each of the three sources (semantic, keyword, subject/tag) assigns an RRF score based on the result\u0027s **rank position** \u2014 not its raw score\n- If a memory appears in **multiple** result lists, its RRF scores are **summed**, giving it a significant boost\n- If a memory appears in only one list, it still gets included but with a lower combined score\n- Results are sorted by combined RRF score (highest first) and truncated to the requested limit\n\n**Why RRF?** It\u0027s a rank-based fusion method, meaning it doesn\u0027t need the raw scores from different methods to be on the same scale. This is critical because FTS5 BM25 scores and cosine similarity scores are fundamentally different metrics \u2014 RRF sidesteps the normalization problem entirely by only caring about relative ordering.\n\n### Edge Cases\n\n- If **both** semantic and keyword results are empty \u2192 returns empty\n- If **only one** source has results \u2192 returns that source\u0027s results directly (no fusion needed)\n- Candidate pool: each source fetches `3\u00d7 limit` (minimum 15) candidates before fusion, ensuring enough diversity for RRF to work well",
+      "input_tokens": 129450,
+      "keyword_score": 0.8181818181818182,
+      "llm_judge_score": null,
+      "mode": "ctxovrflw",
+      "output_tokens": 1724,
+      "platform": "claude",
+      "scenario_id": "ar_2_hybrid_search",
+      "timestamp": "2026-02-16 17:58:00 UTC",
+      "tool_call_count": 13,
+      "tool_call_names": [
+        "Task",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Grep",
+        "Grep",
+        "Read"
+      ],
+      "total_tokens": 131174
+    },
+    {
+      "composite_score": 0.7,
+      "elapsed_ms": 16481.16111755371,
+      "error": null,
+      "final_answer": "The CI builds for the following **5 platforms** (defined in the build matrix of `.github/workflows/release-client.yml`):\n\n1. **Linux x64** \u2014 `x86_64-unknown-linux-gnu` (artifact: `ctxovrflw-linux-x64`)\n2. **Linux ARM64** \u2014 `aarch64-unknown-linux-gnu` (artifact: `ctxovrflw-linux-arm64`)\n3. **macOS x64** \u2014 `x86_64-apple-darwin` (artifact: `ctxovrflw-darwin-x64`)\n4. **macOS ARM64 (Apple Silicon)** \u2014 `aarch64-apple-darwin` (artifact: `ctxovrflw-darwin-arm64`)\n5. **Windows x64** \u2014 `x86_64-pc-windows-msvc` (artifact: `ctxovrflw-windows-x64`)",
+      "input_tokens": 65376,
+      "keyword_score": 0.7,
+      "llm_judge_score": null,
+      "mode": "baseline",
+      "output_tokens": 625,
+      "platform": "claude",
+      "scenario_id": "ar_3_ci_platforms",
+      "timestamp": "2026-02-16 17:58:18 UTC",
+      "tool_call_count": 5,
+      "tool_call_names": [
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read"
+      ],
+      "total_tokens": 66001
+    },
+    {
+      "composite_score": 1.0,
+      "elapsed_ms": 23301.478624343872,
+      "error": null,
+      "final_answer": "The CI (release) workflow builds for **5 platforms** defined in the build matrix:\n\n1. **x86_64-unknown-linux-gnu** \u2014 Linux x64 (runs on `ubuntu-22.04`)\n2. **aarch64-unknown-linux-gnu** \u2014 Linux ARM64 (runs on `ubuntu-22.04` with cross-compilation)\n3. **x86_64-apple-darwin** \u2014 macOS x64 (runs on `macos-latest`)\n4. **aarch64-apple-darwin** \u2014 macOS ARM64 / Apple Silicon (runs on `macos-latest`)\n5. **x86_64-pc-windows-msvc** \u2014 Windows x64 (runs on `windows-latest`)\n\nThese produce the corresponding artifacts: `ctxovrflw-linux-x64`, `ctxovrflw-linux-arm64`, `ctxovrflw-darwin-x64`, `ctxovrflw-darwin-arm64`, and `ctxovrflw-windows-x64`.",
+      "input_tokens": 84060,
+      "keyword_score": 1.0,
+      "llm_judge_score": null,
+      "mode": "directed",
+      "output_tokens": 885,
+      "platform": "claude",
+      "scenario_id": "ar_3_ci_platforms",
+      "timestamp": "2026-02-16 17:58:42 UTC",
+      "tool_call_count": 6,
+      "tool_call_names": [
+        "Glob",
+        "Glob",
+        "Bash",
+        "Glob",
+        "Grep",
+        "Read"
+      ],
+      "total_tokens": 84945
+    },
+    {
+      "composite_score": 0.4,
+      "elapsed_ms": 28691.661834716797,
+      "error": null,
+      "final_answer": "The CI builds for **5 platforms**:\n\n| # | OS | Architecture |\n|---|---|---|\n| 1 | **Linux** | x64 |\n| 2 | **Linux** | ARM64 |\n| 3 | **Windows** | x64 |\n| 4 | **macOS** | x64 |\n| 5 | **macOS** | ARM64 |\n\nThese are built via **GitHub Actions** using a matrix build strategy in the release workflow, producing cross-platform binaries for all five OS/architecture combinations.",
+      "input_tokens": 32935,
+      "keyword_score": 0.4,
+      "llm_judge_score": null,
+      "mode": "ctxovrflw",
+      "output_tokens": 324,
+      "platform": "claude",
+      "scenario_id": "ar_3_ci_platforms",
+      "timestamp": "2026-02-16 17:59:12 UTC",
+      "tool_call_count": 3,
+      "tool_call_names": [
+        "Task",
+        "Bash",
+        "Bash"
+      ],
+      "total_tokens": 33259
+    },
+    {
+      "composite_score": 1.0,
+      "elapsed_ms": 44329.73837852478,
+      "error": null,
+      "final_answer": "Now I have a comprehensive picture. Here\u0027s how to deploy a new version of ctxovrflw:\n\n---\n\n## Deploying a New Version of ctxovrflw\n\nThere are **two ways** to deploy the client \u2014 a local script or the GitHub Actions workflow. Both sync code from the private repo to the public [`M4cs/ctxovrflw-client`](https://github.com/M4cs/ctxovrflw-client) repo, tag it, and trigger CI to build binaries for all platforms.\n\n### Option 1: Local Deploy Script (recommended for day-to-day)\n\n```bash\n./scripts/deploy.sh v0.4.4   # replace with your version tag\n```\n\n**What this does:**\n\n1. **Pushes the private repo** (`main` branch) to origin\n2. **Pulls the public client repo** (expected at `/tmp/ctxovrflw-client`)\n3. **Syncs source files** \u2014 copies `src/`, `tests/`, `skill/`, `Cargo.toml`, and `Cargo.lock` into the public repo\n4. **Commits \u0026 pushes** the changes (if any) with message `sync: v0.4.4`\n5. **Tags the version** (force-pushes the tag) \u2014 this triggers the CI build in the public repo\n6. Prints a command to watch CI: `gh run list --repo M4cs/ctxovrflw-client --limit 1`\n\n**Prerequisites:**\n- The public client repo must be cloned at `/tmp/ctxovrflw-client`\n- You must have push access to both repos\n\n### Option 2: GitHub Actions (CI-driven)\n\nThe workflow at `.github/workflows/deploy.yml` can be triggered two ways:\n\n- **Automatically** \u2014 push a tag matching `v*` to the private repo:\n  ```bash\n  git tag v0.4.4\n  git push origin v0.4.4\n  ```\n\n- **Manually** \u2014 via `workflow_dispatch` in the GitHub Actions UI, providing a version string (e.g., `v0.4.4`)\n\nThe workflow checks out both repos, syncs the source, commits, and pushes the version tag to `M4cs/ctxovrflw-client`, which triggers the public repo\u0027s build CI to compile binaries for **4 platforms** (macOS Intel, macOS ARM, Linux x64, Windows x64).\n\n### After Deployment\n\n1. **Watch CI builds:**\n   ```bash\n   gh run list --repo M4cs/ctxovrflw-client --limit 1\n   ```\n\n2. **Verify the release artifacts** are uploaded to GitHub Releases on the public repo.\n\n3. **Test the self-update mechanism:**\n   ```bash\n   ctxovrflw update\n   ```\n\n4. **Run a health check** to verify services are up:\n   ```bash\n   ./scripts/health-check.sh\n   ```\n   This checks:\n   - `https://api.ctxovrflw.dev/health` (cloud API)\n   - `https://ctxovrflw.dev` (website)\n   - `http://127.0.0.1:7437/health` (local daemon)\n\n### Cloud API (separate deploy)\n\nThe cloud API (`cloud/` directory) runs on **Railway** with `bun run src/index.ts` (via `Procfile`). It auto-deploys from GitHub pushes to Railway, so deploying cloud changes is just pushing to the appropriate branch. This is independent of the client binary release process.\n\n### Version Bump Reminder\n\nBefore deploying, make sure you\u0027ve updated the version in `Cargo.toml` (currently `0.4.3`):\n\n```toml\n[package]\nname = \"ctxovrflw\"\nversion = \"0.4.4\"  # bump this\n```",
+      "input_tokens": 140883,
+      "keyword_score": 1.0,
+      "llm_judge_score": null,
+      "mode": "baseline",
+      "output_tokens": 2029,
+      "platform": "claude",
+      "scenario_id": "ttl_1_deploy",
+      "timestamp": "2026-02-16 17:59:57 UTC",
+      "tool_call_count": 15,
+      "tool_call_names": [
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Glob",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Bash"
+      ],
+      "total_tokens": 142912
+    },
+    {
+      "composite_score": 1.0,
+      "elapsed_ms": 53280.58862686157,
+      "error": null,
+      "final_answer": "Now I have a comprehensive picture. Here\u0027s how to deploy a new version of ctxovrflw:\n\n---\n\n## Deploying a New Version of ctxovrflw\n\nThe project has **three independently deployed components**:\n\n### 1. Client Binary (Rust CLI/Daemon) \u2014 The main release\n\nThis is the primary deployment. Use the **deploy script**:\n\n```bash\n./scripts/deploy.sh v0.4.4   # replace with your version tag\n```\n\n**What this does step-by-step:**\n\n1. **Pushes the private repo** (`M4cs/ctxovrflw`) to `origin main`\n2. **Syncs source to the public client repo** (`/tmp/ctxovrflw-client` \u2192 `M4cs/ctxovrflw-client`) \u2014 copies `src/`, `tests/`, `skill/`, `Cargo.toml`, and `Cargo.lock`\n3. **Commits \u0026 pushes** the synced changes to the public repo\n4. **Tags the version** (e.g., `v0.4.4`) and force-pushes the tag\n\nThe tag push triggers **two GitHub Actions workflows**:\n\n- **`deploy.yml`** (in private repo) \u2014 Syncs source to `ctxovrflw-client` and creates the tag there\n- **`release-client.yml`** (in public repo) \u2014 Builds binaries for **5 platforms**:\n  - `x86_64-unknown-linux-gnu` (Linux x64)\n  - `aarch64-unknown-linux-gnu` (Linux ARM64)\n  - `x86_64-apple-darwin` (macOS Intel)\n  - `aarch64-apple-darwin` (macOS Apple Silicon)\n  - `x86_64-pc-windows-msvc` (Windows x64)\n\n  Each binary is compiled with ONNX support (`--features onnx`), bundled with the ONNX runtime library and the `all-MiniLM-L6-v2` embedding model, then packaged as `.tar.gz` archives.\n\n  After building, the **upload job** pushes all artifacts to the cloud API:\n  ```\n  PUT https://api.ctxovrflw.dev/v1/releases/\u003cversion\u003e/\u003cartifact-name\u003e\n  ```\n  (authenticated with `RELEASE_UPLOAD_KEY`)\n\nUsers can then update via:\n```bash\nctxovrflw update\n```\n\n### 2. Cloud API (Hono/Bun on Railway)\n\nThe cloud API (`cloud/` directory) runs on **Railway** and auto-deploys from GitHub push (as noted in the launch checklist: \"Railway auto-deploy from GitHub push\"). It uses:\n- **Bun** runtime with **Hono** framework\n- **Postgres** database (via Drizzle ORM)\n- **Procfile**: `web: bun run src/index.ts`\n\nTo deploy cloud changes, simply push to `main` and Railway picks it up automatically.\n\nFor database schema changes:\n```bash\ncd cloud\nbun run db:generate   # Generate Drizzle migrations\nbun run db:migrate    # Apply migrations\n```\n\n### 3. Website (Vite/React on Railway)\n\nThe `web/` directory is also hosted on Railway with auto-deploy from GitHub push.\n\n---\n\n### Post-Deploy: Health Check\n\nRun the health check script to verify all services are up:\n\n```bash\n./scripts/health-check.sh\n```\n\nThis checks:\n- **API**: `https://api.ctxovrflw.dev/health`\n- **Website**: `https://ctxovrflw.dev`\n- **Local daemon**: `http://127.0.0.1:7437/health`\n\n### Monitoring CI Progress\n\nAfter deploying a client release:\n```bash\ngh run list --repo M4cs/ctxovrflw-client --limit 1\n```\n\n### Summary (TL;DR)\n\n| Component | How to Deploy | Where it Runs |\n|-----------|--------------|---------------|\n| **Client binary** | `./scripts/deploy.sh v0.X.Y` | GitHub Actions \u2192 API upload |\n| **Cloud API** | `git push origin main` | Railway (auto-deploy) |\n| **Website** | `git push origin main` | Railway (auto-deploy) |",
+      "input_tokens": 207168,
+      "keyword_score": 1.0,
+      "llm_judge_score": null,
+      "mode": "directed",
+      "output_tokens": 2447,
+      "platform": "claude",
+      "scenario_id": "ttl_1_deploy",
+      "timestamp": "2026-02-16 18:00:51 UTC",
+      "tool_call_count": 19,
+      "tool_call_names": [
+        "Glob",
+        "Glob",
+        "Glob",
+        "Bash",
+        "Read",
+        "Glob",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Read",
+        "Read",
+        "Read"
+      ],
+      "total_tokens": 209615
+    },
+    {
+      "composite_score": 1.0,
+      "elapsed_ms": 69280.34329414368,
+      "error": null,
+      "final_answer": "# Deploying a New Version of ctxovrflw\n\nHere\u0027s the full deployment process:\n\n## Quick Start\n\n```bash\n./scripts/deploy.sh v0.X.Y\n```\n\nThat\u0027s the main command. It handles most of the heavy lifting automatically.\n\n---\n\n## What Happens Under the Hood\n\n### 1. **`deploy.sh` syncs to the public repo**\n- Ensures your private repo changes are pushed\n- Syncs `src/`, `tests/`, `skill/`, `Cargo.toml`, and `Cargo.lock` to the public repo at **M4cs/ctxovrflw-client** (expected at `/tmp/ctxovrflw-client`)\n- Creates a git commit (`sync: {VERSION}`) and tag\n- Force-pushes to trigger CI\n\n### 2. **GitHub Actions kicks off two workflows**\n\n| Workflow | Trigger | What it does |\n|---|---|---|\n| **`deploy.yml`** | `v*` tag push | Matrix build of release binaries for **5 platforms** (macOS x64/ARM64, Linux x64/ARM64, Windows x64). Bundles ONNX runtime + model, then uploads artifacts to `https://api.ctxovrflw.dev/v1/releases/{version}/{name}` |\n| **`release-client.yml`** | `v*` tag push | Syncs source to the public repo and tags it |\n\n### 3. **Target Platforms**\n\n| OS | Architecture |\n|---|---|\n| macOS | x86_64 (Intel) |\n| macOS | aarch64 (ARM/Apple Silicon) |\n| Linux | x86_64 |\n| Linux | aarch64 |\n| Windows | x86_64 |\n\n### 4. **Cloud Services (auto-deploy separately)**\n- **Cloud API** (`api.ctxovrflw.dev`) \u2014 Hono/Bun backend, deployed via Railway (auto-deploys on push to `main`)\n- **Website** (`ctxovrflw.dev`) \u2014 React/Vite frontend\n\n---\n\n## Pre-Deploy Checklist\n\n1. **Bump the version** in `Cargo.toml` (currently `v0.4.3`)\n2. **Ensure tests pass** \u2014 `cargo test`\n3. **Push your changes** to the private repo\n4. **Run the deploy script**: `./scripts/deploy.sh v0.X.Y`\n5. **Monitor CI** \u2014 the script will print a command to watch the build\n\n## Post-Deploy Verification\n\nThere\u0027s a health check script you can use:\n\n```bash\n./scripts/health-check.sh\n```\n\nIt checks three endpoints:\n- `https://api.ctxovrflw.dev/health` (Cloud API)\n- `https://ctxovrflw.dev` (Website)\n- `http://127.0.0.1:7437/health` (Local daemon)\n\nYou can also set this up as a cron job (e.g., `*/5 * * * *` for every 5 minutes).",
+      "input_tokens": 52199,
+      "keyword_score": 1.0,
+      "llm_judge_score": null,
+      "mode": "ctxovrflw",
+      "output_tokens": 1290,
+      "platform": "claude",
+      "scenario_id": "ttl_1_deploy",
+      "timestamp": "2026-02-16 18:02:01 UTC",
+      "tool_call_count": 35,
+      "tool_call_names": [
+        "Task\", \"description\": \"Search memory for deployment",
+        "Task",
+        "Task",
+        "Bash",
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Glob",
+        "Read",
+        "Read",
+        "Glob",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Bash"
+      ],
+      "total_tokens": 53489
+    },
+    {
+      "composite_score": 0.7857142857142857,
+      "elapsed_ms": 191730.5142879486,
+      "error": null,
+      "final_answer": "Now I have a complete picture. Here is the full auth flow traced end-to-end:\n\n---\n\n## Full Auth Flow: Device Code Request \u2192 First Encrypted Sync\n\nThe flow spans **3 codebases** (Rust CLI, TypeScript cloud API, web frontend) and involves **14 discrete steps** across 4 phases.\n\n---\n\n### Phase 1 \u2014 Device Code Grant (RFC 8628-style)\n\n**Step 1: CLI requests a device code**\n- **Client:** `src/cli/login.rs:184\u2013201` \u2192 `POST /v1/auth/device/code` with `{ device_name }` (hostname)\n- **Server:** `cloud/src/routes/device-auth.ts:85\u2013118` \u2192\n  - Rate-limit check (5 req/min/IP), cap at 1000 pending auths\n  - Generates a `device_code` (32 random bytes \u2192 hex, 64 chars) \u2014 private, never shown to user\n  - Generates a `user_code` (8 chars from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`, formatted `XXXX-XXXX`) \u2014 no ambiguous chars (0/O/I/1)\n  - Stores `PendingAuth` in an in-memory `Map\u003cdeviceCode, PendingAuth\u003e` with 15-min TTL\n  - Returns `{ device_code, user_code, verification_url: \"https://ctxovrflw.dev/activate\", expires_in: 900, interval: 5 }`\n\n**Step 2: CLI displays code and opens browser**\n- **Client:** `login.rs:203\u2013213` \u2192\n  - Prints the `user_code` in a box (`\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510 \u2502  XXXX-XXXX  \u2502 \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518`)\n  - Attempts to auto-open the verification URL via `xdg-open` (Linux), `open` (macOS), or `cmd /c start` (Windows); falls back to `wslview` for WSL\n\n**Step 3: User approves on the website**\n- **User action:** Navigates to `https://ctxovrflw.dev/activate`, logs in (JWT session auth), enters the `user_code`\n- **Server:** `device-auth.ts:157\u2013214` (`POST /v1/auth/device/approve`, behind `authMiddleware`) \u2192\n  - Normalizes the input code, iterates over `pendingAuths`\n  - Uses **constant-time comparison** (`timingSafeEqual`) to prevent timing attacks\n  - On match: generates a **per-device API key** (`ctxo_` + 16 random hex bytes) via `generateApiKey()`\n  - Hashes it with SHA-256 via `hashApiKey()`\n  - Checks device limit per tier (Free: 1, Standard: 3, Pro: unlimited)\n  - **Pre-creates a device row** in PostgreSQL `devices` table with a placeholder fingerprint (`pending-\u003crandom\u003e`) and the hashed API key\n  - Stores `rawKey`, `apiKeyHash`, `userId`, `deviceId` on the `PendingAuth` object\n  - Returns `{ approved: true, device_name, message }` to the browser\n\n**Step 4: CLI polls and receives token**\n- **Client:** `login.rs:219\u2013256` \u2192 Polls `POST /v1/auth/device/token` every 5 seconds (or server-specified interval, min 3s) with `{ device_code }`\n- **Server:** `device-auth.ts:125\u2013150` \u2192\n  - While `pending.apiKey === null` \u2192 returns HTTP 428 `{ error: \"authorization_pending\" }`\n  - Once approved \u2192 returns `{ api_key: \"\u003craw ctxo_xxx\u003e\", device_id: \"\u003cuuid\u003e\" }` and deletes the `PendingAuth`\n  - If expired \u2192 returns HTTP 400 `{ error: \"expired_token\" }`\n\n---\n\n### Phase 2 \u2014 Device Registration \u0026 Profile Fetch\n\n**Step 5: CLI registers the device (updates fingerprint)**\n- **Client:** `login.rs:92\u2013137` \u2192\n  - Generates fingerprint: `\u003chostname\u003e-\u003cos\u003e-\u003carch\u003e` (e.g., `maxs-laptop-linux-x86_64`) via `Config::device_fingerprint()` (`config.rs:231\u2013238`)\n  - Sends `POST /v1/devices/register` with `{ name, device_fingerprint, device_id }` (the pre-created ID from step 3)\n- **Server:** `cloud/src/routes/devices.ts:15\u201376` \u2192\n  - Finds the pre-created device row by `device_id`, updates it with the **real fingerprint** and device name\n  - If fingerprint already exists (re-registration), updates the API key hash and cleans up the placeholder\n  - Returns `{ device_id }`\n\n**Step 6: CLI saves initial config**\n- **Client:** `login.rs:142\u2013145` \u2192\n  - Saves `api_key` and `device_id` to `~/.ctxovrflw/config.toml`\n  - File permissions set to `0o600` (owner-only) on Unix (`config.rs:172\u2013176`)\n\n**Step 7: CLI fetches user profile**\n- **Client:** `login.rs:148\u2013169` \u2192 `GET /v1/auth/profile` with `Bearer \u003capi_key\u003e`\n- **Server:** `cloud/src/routes/auth.ts:188\u2013237` \u2192 Returns `{ user: { tier, email, ... } }`\n- **Client:** Saves `tier` and `email` to config. The email is **critical** \u2014 used later in key derivation context.\n\n---\n\n### Phase 3 \u2014 Zero-Knowledge Encryption Setup\n\n**Step 8: CLI checks if cloud sync is available**\n- **Client:** `login.rs:173` \u2192 `cfg.tier.cloud_sync_enabled()` \u2192 only `Standard` or `Pro` (`config.rs:85\u201391`)\n- If Free tier: prints \"local-only mode\" and stops here. No encryption setup.\n\n**Step 9: CLI checks if account already has a PIN**\n- **Client:** `login.rs:342\u2013352` \u2192 `GET /v1/auth/pin-verifier`\n- **Server:** `auth.ts:356\u2013368` \u2192 Returns `{ has_pin: bool, key_salt: string | null }` from the `users` table\n\n**Step 10a: First device \u2014 Create PIN** (if `has_pin === false`)\n- **Client:** `login.rs:354\u2013403` \u2192\n  - Prompts user for a sync PIN (min 6 chars) + confirmation\n  - Sends `POST /v1/auth/setup-pin` with `{ pin }` (yes, the raw PIN goes to the server here)\n- **Server:** `auth.ts:371\u2013401` \u2192\n  - Generates a random 32-byte salt (`randomBytes(32)`)\n  - Constructs full salt: `\"ctxovrflw-zk-v1-\" || randomSalt`\n  - Derives key: `PBKDF2-HMAC-SHA256(pin, fullSalt, 600,000 iterations, 32 bytes)`\n  - Creates verifier: encrypts the literal string `\"ctxovrflw-pin-verify\"` with AES-256-GCM using the derived key\n  - Stores `keySaltHex` and `verifier` (base64) in the `users` table\n  - Returns `{ ok: true, key_salt, pin_verifier }`\n- **Client:** `login.rs:393\u2013401` \u2192\n  - Derives the **same key locally** using `crypto::derive_key(pin, key_salt)` (`crypto/mod.rs:23\u201338`):\n    - Builds salt: `b\"ctxovrflw-zk-v1-\" || hex_decode(key_salt)`\n    - Runs `PBKDF2-HMAC-SHA256` with 600,000 iterations \u2192 256-bit key\n  - Saves `key_salt`, `pin_verifier`, and **caches the derived key** (hex-encoded) + timestamp in config\n  - Key cache TTL: **30 days** (`config.rs:186\u2013207`)\n\n**Step 10b: Subsequent device \u2014 Verify PIN** (if `has_pin === true`)\n- **Client:** `login.rs:405\u2013443` \u2192\n  - Prompts for sync PIN\n  - Sends `POST /v1/auth/verify-pin` with `{ pin }`\n- **Server:** `auth.ts:405\u2013432` \u2192\n  - Fetches `keySalt` and `pinVerifier` from DB\n  - Derives key from PIN + salt, decrypts the verifier blob\n  - If decryption succeeds and plaintext equals `\"ctxovrflw-pin-verify\"` \u2192 returns `{ ok, key_salt, pin_verifier }`\n  - If wrong PIN \u2192 HTTP 401\n- **Client:** On failure, **logs the user out entirely** (clears api_key, device_id, email, pin_verifier, key_salt) as a security measure\n\n---\n\n### Phase 4 \u2014 First Encrypted Sync\n\n**Step 11: Sync engine starts**\n- **Client:** `sync/mod.rs:57\u201377` (`sync::run()`) \u2192\n  - Validates login: `api_key` + `device_id` present\n  - Retrieves encryption key: `get_encryption_key()` (`sync/mod.rs:41\u201354`) checks `cfg.is_encrypted()` (pin_verifier + key_salt present) then `cfg.get_cached_key()` (hex decode + 30-day check)\n\n**Step 12: Push \u2014 Encrypt \u0026 upload local memories**\n- **Client:** `sync/mod.rs:160\u2013263` \u2192\n  - Queries SQLite for unsynced memories: `WHERE synced_at IS NULL OR updated_at \u003e synced_at`, limit 200\n  - For each memory, calls `encrypt_memory()` (`sync/mod.rs:137\u2013147`):\n    - `crypto::encrypt_string(key, content)` \u2192 AES-256-GCM with random 12-byte nonce \u2192 `[nonce || ciphertext || tag]` \u2192 base64\n    - `crypto::encrypt_string(key, serde_json::to_string(tags))` \u2192 tags encrypted as JSON string\n    - `crypto::content_hash(content)` \u2192 SHA-256 of plaintext for sync integrity (server can verify consistency without seeing content)\n  - Groups into **size-aware batches** (max 800KB per request, skips individual memories \u003e500KB)\n  - Sends `POST /v1/sync/push` with `{ device_id, memories: [...], encrypted: true }`\n- **Server:** `cloud/src/routes/sync.ts:32\u2013189` \u2192\n  - **Rejects** if `encrypted !== true` (literal enforcement \u2014 `z.literal(true)` in the Zod schema)\n  - Checks tier allows cloud sync\n  - Verifies device ownership\n  - For each memory: upserts into PostgreSQL (ON CONFLICT DO UPDATE), respects tier memory limits\n  - Tombstoned memories on cloud are **not resurrected** by pushes (deletion wins)\n  - Logs the push in `sync_log`, fires background `purgeTombstones()` (30-day cutoff)\n  - Returns `{ synced, rejected, over_limit }`\n- **Client:** Marks each pushed memory with `synced_at = NOW()` in local SQLite\n\n**Step 13: Pull \u2014 Download \u0026 decrypt remote memories**\n- **Client:** `sync/mod.rs:267\u2013298` \u2192 `POST /v1/sync/pull` with `{ device_id }`\n- **Server:** `sync.ts:196\u2013264` \u2192\n  - Uses **server-side cursor**: `devices.lastSyncAt` \u2014 returns all user memories where `updatedAt \u003e lastSyncAt`\n  - Updates `lastSyncAt = NOW()` on the device row\n  - Logs the pull in `sync_log`\n  - Returns `{ memories: [...], sync_timestamp }`\n- **Client:** `merge_remote_memories()` (`sync/mod.rs:443\u2013549`) \u2192\n  - For each pulled memory:\n    - `crypto::decrypt_string(enc_key, mem.content)` \u2192 AES-256-GCM decryption (12-byte nonce split, tag verification)\n    - Decrypts tags (first element of tags array is an encrypted JSON string)\n    - **Conflict resolution**: local deletions win (won\u0027t resurrect); for non-deleted, `UPDATE ... WHERE updated_at \u003c remote.updated_at` (last-write-wins)\n    - **Re-generates embeddings** for pulled/updated memories using the ONNX embedder (`crate::embed::get_or_init()`)\n    - Inserts new memories into SQLite with `synced_at = NOW()`\n\n**Step 14: Tombstone cleanup**\n- **Client:** `sync/mod.rs:105\u2013133` \u2192 Permanently deletes local memories where `deleted = 1 AND synced_at IS NOT NULL AND updated_at \u003c= 7 days ago`\n- **Server:** `sync.ts:269\u2013284` \u2192 Background purge of tombstones older than 30 days\n\n---\n\n### Summary: The Complete Chain\n\n```\nCLI                              Cloud Server                    Browser\n \u2502                                    \u2502                            \u2502\n \u251c\u2500 POST /v1/auth/device/code \u2500\u2500\u2500\u2500\u2500\u2500\u25ba \u2502                            \u2502\n \u2502\u25c4\u2500\u2500 { device_code, user_code } \u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502 Display XXXX-XXXX, open browser    \u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502                                    \u2502  \u25c4\u2500\u2500 POST /device/approve \u2500\u2524 (user enters code)\n \u2502                                    \u2502   generate per-device key  \u2502\n \u2502                                    \u2502   pre-create device row    \u2502\n \u2502                                    \u2502  \u2500\u2500\u25ba { approved: true } \u2500\u2500\u25ba\u2502\n \u2502                                    \u2502                            \u2502\n \u2502\u2500 POST /v1/auth/device/token \u2500\u2500\u2500\u2500\u2500\u25ba \u2502                            \u2502\n \u2502\u25c4\u2500\u2500 { api_key, device_id } \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502\u2500 POST /v1/devices/register \u2500\u2500\u2500\u2500\u2500\u2500\u25ba \u2502 (update placeholder FP)    \u2502\n \u2502\u25c4\u2500\u2500 { device_id } \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502\u2500 GET /v1/auth/profile \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u25ba \u2502                            \u2502\n \u2502\u25c4\u2500\u2500 { tier, email } \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502  [if Standard/Pro tier]:           \u2502                            \u2502\n \u2502\u2500 GET /v1/auth/pin-verifier \u2500\u2500\u2500\u2500\u2500\u2500\u25ba \u2502                            \u2502\n \u2502\u25c4\u2500\u2500 { has_pin, key_salt } \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502  [if !has_pin]:                    \u2502                            \u2502\n \u2502\u2500 POST /v1/auth/setup-pin \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u25ba \u2502 (PBKDF2 + AES-GCM verify) \u2502\n \u2502\u25c4\u2500\u2500 { key_salt, pin_verifier } \u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502  Local: derive_key(pin, salt)      \u2502                            \u2502\n \u2502  PBKDF2(SHA256, 600K iters)        \u2502                            \u2502\n \u2502  Cache key in config (30-day TTL)  \u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502\u2550\u2550\u2550\u2550\u2550\u2550\u2550 FIRST SYNC \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550  \u2502\n \u2502                                    \u2502                            \u2502\n \u2502  For each unsynced memory:         \u2502                            \u2502\n \u2502    AES-256-GCM(key, content)       \u2502                            \u2502\n \u2502    AES-256-GCM(key, tags_json)     \u2502                            \u2502\n \u2502    SHA-256(content) \u2192 hash         \u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502\u2500 POST /v1/sync/push \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u25ba \u2502 (upsert encrypted blobs)   \u2502\n \u2502\u25c4\u2500\u2500 { synced, rejected } \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502\u2500 POST /v1/sync/pull \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u25ba \u2502 (cursor: lastSyncAt)       \u2502\n \u2502\u25c4\u2500\u2500 { memories: [...] } \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502  For each pulled memory:           \u2502                            \u2502\n \u2502    AES-256-GCM decrypt(content)    \u2502                            \u2502\n \u2502    AES-256-GCM decrypt(tags)       \u2502                            \u2502\n \u2502    ONNX embed \u2192 sqlite-vec         \u2502                            \u2502\n \u2502                                    \u2502                            \u2502\n \u2502  Purge tombstones (\u003e7 days local)  \u2502  Purge tombstones (\u003e30d)   \u2502\n```\n\n### Key Security Properties\n\n| Property | Implementation |\n|----------|---------------|\n| **Zero-knowledge** | Server never sees plaintext content; encryption/decryption is client-side only |\n| **Key derivation** | PBKDF2-HMAC-SHA256, 600K iterations, server-provided random salt prefixed with `\"ctxovrflw-zk-v1-\"` |\n| **Encryption** | AES-256-GCM with unique 12-byte random nonce per memory; format: `[nonce \u2016 ciphertext \u2016 tag]` \u2192 base64 |\n| **API keys** | `ctxo_` prefix + 16 random bytes; SHA-256 hashed before storage; per-device keys survive user key rotation |\n| **Timing attacks** | `timingSafeEqual` for user code comparison |\n| **Config security** | `chmod 600` on `config.toml` (contains cached encryption key + API key) |\n| **Mandatory encryption** | Push schema enforces `encrypted: z.literal(true)` \u2014 unencrypted sync is rejected |\n| **PIN loss** | Unrecoverable \u2014 no backdoor, no server-side key escrow |",
+      "input_tokens": 209704,
+      "keyword_score": 0.7857142857142857,
+      "llm_judge_score": null,
+      "mode": "baseline",
+      "output_tokens": 5504,
+      "platform": "claude",
+      "scenario_id": "lru_1_auth_flow",
+      "timestamp": "2026-02-16 18:05:14 UTC",
+      "tool_call_count": 66,
+      "tool_call_names": [
+        "Task",
+        "Bash",
+        "Bash",
+        "Task",
+        "Read",
+        "Bash",
+        "Grep",
+        "Grep",
+        "Bash",
+        "Grep",
+        "Bash",
+        "Bash",
+        "Grep",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Grep",
+        "Read",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Grep",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Read",
+        "Read",
+        "Grep",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read"
+      ],
+      "total_tokens": 215208
+    },
+    {
+      "composite_score": 0.5714285714285714,
+      "elapsed_ms": 383103.50489616394,
+      "error": null,
+      "final_answer": "Now I have the complete picture. Here\u0027s the full trace:\n\n---\n\n## Full Auth Flow: Device Code Request \u2192 First Encrypted Sync\n\nThe flow spans 3 files (`src/cli/login.rs`, `src/crypto/mod.rs`, `src/sync/mod.rs`) and involves **10 distinct steps** across two phases.\n\n---\n\n### Phase 1: Authentication \u0026 Key Setup (`ctxovrflw login`)\n\n**Step 1 \u2014 Initiate Device Code Flow**\n`login.rs:184-201` \u2192 `POST /v1/auth/device/code` with `{ device_name }`.\nThe server returns a `DeviceCodeResponse`:\n```rust\n{ device_code, user_code, verification_url, expires_in, interval }\n```\n\n**Step 2 \u2014 User Authorizes in Browser**\n`login.rs:203-213` \u2192 The CLI prints a formatted box with the `user_code` and `verification_url`, and attempts to auto-open the browser (`open` on macOS, `xdg-open` on Linux, `cmd /c start` on Windows). The user logs in on the web and enters the code.\n\n**Step 3 \u2014 Poll for Token**\n`login.rs:219-256` \u2192 The client enters a polling loop, hitting `POST /v1/auth/device/token` with `{ device_code }` every `interval` seconds (min 3s). Three outcomes:\n- `\"authorization_pending\"` \u2192 keep polling\n- `\"expired_token\"` \u2192 bail with timeout error\n- `api_key` present \u2192 **success!** Returns `(api_key, Option\u003cdevice_id\u003e)`\n\n**Step 4 \u2014 Register Device**\n`login.rs:91-137` \u2192 `POST /v1/devices/register` with `{ name, device_fingerprint, [device_id] }`. The fingerprint is `\"{hostname}-{os}-{arch}\"` from `Config::device_fingerprint()`. If registration returns a 409 (already exists), falls back to `GET /v1/devices` and matches by fingerprint to recover the existing `device_id`.\n\n**Step 5 \u2014 Persist Credentials**\n`login.rs:141-145` \u2192 Saves `api_key` and `device_id` to `~/.ctxovrflw/config.toml` (file permissions `chmod 600`).\n\n**Step 6 \u2014 Fetch Profile \u0026 Tier**\n`login.rs:148-169` \u2192 `GET /v1/auth/profile` returns the user\u0027s `tier` (free/standard/pro) and `email`. Saved to config. The tier determines whether cloud sync is available (`Standard` and `Pro` only).\n\n**Step 7 \u2014 Zero-Knowledge Encryption PIN Setup**\n`login.rs:172-178` \u2192 If `tier.cloud_sync_enabled()` is true, enters `setup_sync_pin()`. Two sub-paths:\n\n**7a \u2014 First device (no PIN exists):** `login.rs:342-403`\n1. `GET /v1/auth/pin-verifier` \u2192 server returns `{ has_pin: false }`\n2. Prompt user to create a PIN (min 6 chars) + confirm it\n3. `POST /v1/auth/setup-pin` with `{ pin }` \u2192 server generates a random 32-byte hex **salt**, returns `{ key_salt, pin_verifier }`\n4. Client derives key locally: `crypto::derive_key(\u0026pin, \u0026key_salt)` \u2014 **PBKDF2-HMAC-SHA256, 600,000 iterations**, with salt prefixed by `b\"ctxovrflw-zk-v1-\"`\n5. Stores `key_salt`, `pin_verifier`, and the hex-encoded derived key in config (`cache_key()` \u2014 30-day TTL)\n\n**7b \u2014 Subsequent device (PIN already exists):** `login.rs:404-444`\n1. `GET /v1/auth/pin-verifier` \u2192 server returns `{ has_pin: true }`\n2. Prompt for existing PIN\n3. `POST /v1/auth/verify-pin` with `{ pin }` \u2192 server returns `{ key_salt, pin_verifier }`\n4. Derive key locally with same PBKDF2 parameters, cache it\n5. **Wrong PIN?** \u2192 All auth state is wiped (api_key, device_id, email, pin_verifier, key_salt cleared), user is logged out\n\nAt this point, `~/.ctxovrflw/config.toml` contains:\n```toml\napi_key = \"...\"\ndevice_id = \"...\"\nemail = \"...\"\ntier = \"standard\"  # or \"pro\"\nkey_salt = \"aabbccdd...\"      # 32-byte hex from server\npin_verifier = \"base64...\"    # encrypted \"ctxovrflw-pin-verify\"\ncached_key = \"hex...\"         # 256-bit derived key\nkey_cached_at = \"2026-...\"    # ISO 8601 timestamp\n```\n\n---\n\n### Phase 2: First Encrypted Sync (`ctxovrflw sync` or auto-sync daemon)\n\n**Step 8 \u2014 Pre-flight Checks**\n`sync/mod.rs:65-77` \u2192 `sync::run()` verifies:\n1. `cfg.is_logged_in()` \u2014 `api_key` AND `device_id` present\n2. `get_encryption_key(cfg)` \u2014 `cfg.is_encrypted()` (pin_verifier + key_salt exist) AND `cfg.get_cached_key()` returns a valid key (cached \u003c30 days). **If either fails, sync is refused** \u2014 no plaintext cloud storage is ever allowed.\n\n**Step 9 \u2014 Push (Encrypted)**\n`sync/mod.rs:148-218` \u2192 `push()`:\n1. Query local DB: `SELECT ... FROM memories WHERE synced_at IS NULL OR updated_at \u003e synced_at`\n2. For each memory, `encrypt_memory()` encrypts content and tags:\n   - `crypto::encrypt_string(key, content)` \u2192 AES-256-GCM with random 12-byte nonce, output = base64(`[nonce\u2016ciphertext\u2016tag]`)\n   - `crypto::encrypt_string(key, tags_json)` \u2192 same for tags\n   - `crypto::content_hash(content)` \u2192 SHA-256 hex digest (for server-side consistency checks without seeing plaintext)\n3. Size-aware batching: batches capped at 800KB, individual memories \u003e500KB skipped\n4. `POST /v1/sync/push` with `{ device_id, memories: [...], encrypted: true }`\n5. On success, marks each memory with `synced_at = now`\n\n**Step 10 \u2014 Pull (Encrypted)**\n`sync/mod.rs:221-248` \u2192 `pull()`:\n1. `POST /v1/sync/pull` with `{ device_id }`\n2. For each remote memory in `merge_remote_memories()`:\n   - `crypto::decrypt_string(key, encrypted_content)` \u2192 plaintext (with legacy fallback for unencrypted data)\n   - Tags: first element of tags array is decrypted to get the real `Vec\u003cString\u003e`\n   - **Conflict resolution**: last-write-wins (`UPDATE ... WHERE updated_at \u003c remote.updated_at`)\n   - **Deletion**: local deletions are never overridden by remote resurrections\n   - New memories are inserted and embedded for local vector search\n3. Finally, `purge_tombstones()` removes soft-deleted memories that were synced \u003e7 days ago\n\n---\n\n### Visual Summary\n\n```\nctxovrflw login\n  \u2502\n  \u251c\u2500 POST /v1/auth/device/code         \u2190 get device_code + user_code\n  \u2502     \u2193 (user authorizes in browser)\n  \u251c\u2500 POST /v1/auth/device/token (poll)  \u2190 receive api_key + device_id\n  \u251c\u2500 POST /v1/devices/register          \u2190 register device by fingerprint\n  \u251c\u2500 GET  /v1/auth/profile              \u2190 fetch tier + email\n  \u251c\u2500 GET  /v1/auth/pin-verifier         \u2190 check if account has PIN\n  \u251c\u2500 POST /v1/auth/setup-pin            \u2190 server generates salt, returns verifier\n  \u2502     \u2193\n  \u2502  PBKDF2(pin, \"ctxovrflw-zk-v1-\" + salt, 600K iterations) \u2192 256-bit key\n  \u2502  Cache key locally (30-day TTL)\n  \u2502\nctxovrflw sync (or auto-sync every 60s)\n  \u2502\n  \u251c\u2500 Verify: logged_in \u2227 encrypted \u2227 key_not_expired\n  \u251c\u2500 PUSH: encrypt(AES-256-GCM) each memory \u2192 POST /v1/sync/push\n  \u251c\u2500 PULL: POST /v1/sync/pull \u2192 decrypt each memory \u2192 merge locally\n  \u2514\u2500 Purge tombstones \u003e7 days old\n```\n\n**Key security invariant**: The server **never** sees plaintext. All encryption/decryption happens client-side. The server stores only ciphertext, and the encryption key is derived from the user\u0027s PIN + a server-provided salt \u2014 the PIN itself is never transmitted after initial setup/verification.",
+      "input_tokens": 106986,
+      "keyword_score": 0.5714285714285714,
+      "llm_judge_score": null,
+      "mode": "directed",
+      "output_tokens": 3090,
+      "platform": "claude",
+      "scenario_id": "lru_1_auth_flow",
+      "timestamp": "2026-02-16 18:11:38 UTC",
+      "tool_call_count": 51,
+      "tool_call_names": [
+        "Task",
+        "TodoWrite",
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "TodoWrite",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "TodoWrite",
+        "TodoWrite",
+        "Task",
+        "Grep",
+        "Grep",
+        "Grep",
+        "Glob",
+        "Grep",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Read"
+      ],
+      "total_tokens": 110076
+    },
+    {
+      "composite_score": 0.6428571428571429,
+      "elapsed_ms": 283948.98986816406,
+      "error": null,
+      "final_answer": "## Complete Auth Flow: Device Code Request \u2192 First Encrypted Sync\n\nHere is the full end-to-end trace across both the **Rust CLI/daemon** and the **TypeScript cloud API**:\n\n---\n\n### Step 1: User Invokes Login\n**`src/main.rs` \u2192 `src/cli/login.rs::run()`**\n\nThe user runs `ctxovrflw login`. The CLI checks if it\u0027s running in a TTY \u2014 if yes, it enters the device code flow; otherwise, it falls back to email/password. An optional `--key` flag allows direct API key auth, skipping the interactive flow entirely.\n\n---\n\n### Step 2: Device Code Request (CLI \u2192 Cloud)\n**`src/cli/login.rs::device_code_flow()` \u2192 `cloud/src/routes/device-auth.ts` POST `/v1/auth/device/code`**\n\nThe CLI sends a POST with `{ device_name }`. The server:\n1. **Rate-limits** by IP (5 req/min) and caps pending auths at 1,000\n2. Generates a **`device_code`** = 32 random bytes (hex) \u2014 the polling secret\n3. Generates a **`user_code`** = 8 alphanumeric chars in `XXXX-XXXX` format (no ambiguous 0/O/I/1)\n4. Stores a `PendingAuth` in an in-memory `Map` with a **15-minute TTL**\n5. Returns `{ device_code, user_code, verification_url: \"https://ctxovrflw.dev/activate\", interval: 5 }`\n\nExpired codes are cleaned up every 60 seconds by a background sweeper.\n\n---\n\n### Step 3: Display Code \u0026 Open Browser\n**`src/cli/login.rs` (lines 203\u2013213)**\n\nThe CLI prints the code in a visual box and attempts to open the browser:\n```\nhttps://ctxovrflw.dev/activate\n\u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510\n\u2502  ABCD-EFGH   \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n```\nUses `open` (macOS), `xdg-open` (Linux), or `wslview` (WSL) as fallbacks.\n\n---\n\n### Step 4: User Approves in Browser\n**`cloud/src/routes/device-auth.ts` POST `/v1/auth/device/approve`** (JWT-authenticated)\n\nThe user logs into the web dashboard and enters their code. The server:\n1. Normalizes the code (uppercase, strip non-alphanumeric)\n2. Does a **timing-safe comparison** across all pending auths\n3. Generates a **per-device API key**: `ctxo_` + 16 random bytes (hex)\n4. SHA-256 hashes the key for storage\n5. **Pre-creates a device row** in the DB with a placeholder fingerprint\n6. Checks tier-based device limits\n7. Sets `pending.apiKey` and `pending.deviceId` \u2014 unblocking the poll\n\n---\n\n### Step 5: CLI Polls for Token\n**`src/cli/login.rs` (lines 216\u2013257) \u2192 `cloud/src/routes/device-auth.ts` POST `/v1/auth/device/token`**\n\nThe CLI polls every `max(interval, 3)` seconds until the deadline:\n- **HTTP 428** `{ error: \"authorization_pending\" }` \u2192 keep polling\n- **HTTP 400** `{ error: \"expired_token\" }` \u2192 abort\n- **HTTP 200** `{ api_key: \"ctxo_...\", device_id: \"uuid\" }` \u2192 **authorized!**\n\n---\n\n### Step 6: Device Registration\n**`src/cli/login.rs` (lines 92\u2013137) \u2192 `cloud/src/routes/devices.ts` POST `/v1/devices/register`**\n\nThe CLI computes the real device fingerprint (`hostname-os-arch` from `Config::device_fingerprint()`) and sends it with the pre-created `device_id`. The server updates the placeholder row with the real fingerprint, or handles re-registration if the fingerprint already exists.\n\n---\n\n### Step 7: Config Persistence \u0026 Profile Fetch\n**`src/cli/login.rs` (lines 142\u2013168) \u2192 `cloud/src/routes/auth.ts` GET `/v1/auth/profile`**\n\nThe CLI:\n1. Saves `api_key` and `device_id` to `~/.ctxovrflw/config.toml` (file mode `0600`)\n2. Fetches the user profile to get `tier`, `email`, memory/device counts\n\n---\n\n### Step 8: Sync PIN Setup (Zero-Knowledge Key Derivation)\n**`src/cli/login.rs::setup_sync_pin()` \u2192 `cloud/src/routes/auth.ts`**\n\nIf the tier supports cloud sync (`Standard` or `Pro`):\n\n**New account (no PIN yet):**\n1. CLI checks `GET /v1/auth/pin-verifier` \u2192 `{ has_pin: false }`\n2. CLI prompts for a PIN (min 6 chars, confirmed twice)\n3. CLI sends `POST /v1/auth/setup-pin` with the PIN\n4. Server generates a **32-byte random salt**, prepends the fixed prefix `\"ctxovrflw-zk-v1-\"`\n5. Server derives a 32-byte key via **PBKDF2-HMAC-SHA256, 600,000 iterations**\n6. Server creates a **verifier**: AES-256-GCM encryption of the known plaintext `\"ctxovrflw-pin-verify\"` with a random 12-byte nonce\n7. Server stores `keySalt` (hex) and `pinVerifier` (base64) on the user row\n8. CLI derives the **identical key locally** using `ring::pbkdf2` with the same parameters\n9. Key is hex-encoded and cached in `config.toml` with a **30-day TTL**\n\n**Existing account (has PIN):**\n1. `GET /v1/auth/pin-verifier` \u2192 `{ has_pin: true, key_salt: \"...\" }`\n2. CLI prompts for PIN, sends `POST /v1/auth/verify-pin`\n3. Server re-derives the key and verifies by AES-256-GCM decrypting the verifier\n4. On failure: CLI **clears all auth state** and forces re-login\n\n---\n\n### Step 9: The First Sync (Push)\n**`src/sync/mod.rs::push()` \u2192 `cloud/src/routes/sync.ts` POST `/v1/sync/push`**\n\n1. Query local SQLite for unsynced memories (`synced_at IS NULL OR updated_at \u003e synced_at`)\n2. For each memory, **encrypt before sending**:\n   - Content \u2192 `AES-256-GCM(key, plaintext)` \u2192 base64\n   - Tags \u2192 `AES-256-GCM(key, JSON.stringify(tags))` \u2192 base64\n   - Content hash \u2192 `SHA-256(plaintext)` (for dedup without revealing content)\n3. Batch into **\u2264800KB chunks**\n4. POST with `encrypted: true` (server **rejects unencrypted pushes** \u2014 enforced by `z.literal(true)`)\n5. Server upserts memories (stores only ciphertext), respects tombstones, logs to `sync_log`\n6. CLI marks pushed memories with `synced_at` timestamp\n\n---\n\n### Step 10: The First Sync (Pull)\n**`src/sync/mod.rs::pull()` \u2192 `cloud/src/routes/sync.ts` POST `/v1/sync/pull`**\n\n1. Server returns all memories updated since this device\u0027s `lastSyncAt` cursor (epoch 0 for first pull)\n2. CLI decrypts each memory: `AES-256-GCM decrypt \u2192 plaintext`\n3. Upserts into local SQLite (remote wins only if `updated_at` is newer; local deletions take precedence)\n4. Generates **ONNX embeddings** for new/updated memories (for local semantic search)\n5. Server advances `lastSyncAt` to current timestamp\n\n---\n\n### Ongoing Sync Triggers\n\nAfter the initial sync, three mechanisms keep data in sync:\n\n| Trigger | Location | Mechanism |\n|---------|----------|-----------|\n| **Auto-sync** | `src/daemon.rs` (line 55\u201386) | Background task every 60s (configurable) |\n| **Immediate push** | `src/http/routes.rs` (line 196\u2013203) | `tokio::spawn(push_one())` on every memory create/update via MCP |\n| **Manual sync** | `ctxovrflw sync` CLI command | Full push + pull + tombstone purge |\n\n---\n\n### Security Architecture Summary\n\n```\nUser\u0027s PIN (never stored)\n       \u2502\n       \u25bc\n  PBKDF2-HMAC-SHA256 (600K iterations)\n  Salt: \"ctxovrflw-zk-v1-\" || random_32_bytes\n       \u2502\n       \u25bc\n  256-bit AES key (cached locally, 30-day TTL)\n       \u2502\n       \u251c\u2500\u2500\u25ba AES-256-GCM encrypt (unique 12-byte nonce per memory)\n       \u2502         \u2502\n       \u2502         \u25bc\n       \u2502    Ciphertext stored on server\n       \u2502\n       \u2514\u2500\u2500\u25ba Verifier: AES-256-GCM(\"ctxovrflw-pin-verify\")\n                  \u2502\n                  \u25bc\n             Stored on server for PIN verification\n```\n\n**The server never sees plaintext content, tags, or the encryption key.** A complete database breach reveals only ciphertext. The zero-knowledge design ensures that only the user\u0027s PIN (combined with the salt) can decrypt memories.",
+      "input_tokens": 41148,
+      "keyword_score": 0.6428571428571429,
+      "llm_judge_score": null,
+      "mode": "ctxovrflw",
+      "output_tokens": 2815,
+      "platform": "claude",
+      "scenario_id": "lru_1_auth_flow",
+      "timestamp": "2026-02-16 18:16:23 UTC",
+      "tool_call_count": 37,
+      "tool_call_names": [
+        "Task",
+        "TodoWrite",
+        "Grep",
+        "Grep",
+        "Grep",
+        "Grep",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "TodoWrite",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "TodoWrite",
+        "TodoWrite"
+      ],
+      "total_tokens": 43963
+    },
+    {
+      "composite_score": 0.6,
+      "elapsed_ms": 24876.68752670288,
+      "error": null,
+      "final_answer": "Here is how the PIN encryption key is derived in the ctxovrflw codebase:\n\n## PIN Encryption Key Derivation\n\nThe encryption key is derived from the user\u0027s **sync PIN** using the `derive_key()` function in `src/crypto/mod.rs`:\n\n### Algorithm: **PBKDF2-HMAC-SHA256**\n\n| Parameter | Value |\n|-----------|-------|\n| **KDF** | PBKDF2 with HMAC-SHA256 |\n| **Iterations** | 600,000 |\n| **Output key length** | 256 bits (32 bytes) |\n| **Input password** | User-chosen sync PIN (as UTF-8 bytes) |\n| **Salt** | `\"ctxovrflw-zk-v1-\"` prefix \u2225 server-provided salt (decoded from hex) |\n\n### Process\n\n1. **Salt construction** \u2014 A **server-provided 32-byte random salt** (received as a 64-character hex string, generated on first PIN setup) is decoded from hex. It is then prepended with the hardcoded prefix `b\"ctxovrflw-zk-v1-\"` to form the full salt.\n\n2. **Key derivation** \u2014 The PIN (as bytes) and the constructed salt are passed through **PBKDF2-HMAC-SHA256** for **600,000 iterations**, producing a **32-byte (256-bit) key**.\n\n3. **Usage** \u2014 The resulting key is used directly as an **AES-256-GCM** symmetric encryption key for encrypting/decrypting memories before cloud sync. Each memory gets a unique 12-byte random nonce, and the encrypted output format is `[12-byte nonce || ciphertext || GCM auth tag]`.\n\n### PIN Verification\n\nTo verify a PIN without storing it, a **verifier** is created by encrypting the known string `\"ctxovrflw-pin-verify\"` with the derived key. Later, the PIN can be checked by re-deriving the key and attempting to decrypt the verifier \u2014 if it decrypts to the expected string, the PIN is correct.\n\n\u003e **Note:** The security documentation (`docs/content/docs/architecture/security.mdx`) mentions **Argon2id** as the KDF, but the actual implementation in code uses **PBKDF2-HMAC-SHA256**. This is a discrepancy between the docs and the source code \u2014 the code is the source of truth.",
+      "input_tokens": 65566,
+      "keyword_score": 0.6,
+      "llm_judge_score": null,
+      "mode": "baseline",
+      "output_tokens": 950,
+      "platform": "claude",
+      "scenario_id": "cr_1_pin_derivation",
+      "timestamp": "2026-02-16 18:16:49 UTC",
+      "tool_call_count": 4,
+      "tool_call_names": [
+        "Grep",
+        "Glob",
+        "Read",
+        "Read"
+      ],
+      "total_tokens": 66516
+    },
+    {
+      "composite_score": 0.6,
+      "elapsed_ms": 15339.165210723877,
+      "error": null,
+      "final_answer": "## PIN Encryption Key Derivation\n\nBased on the `src/crypto/mod.rs` file, the encryption key is derived from a user-chosen **sync PIN** using the following process:\n\n### Algorithm: **PBKDF2-HMAC-SHA256**\n\nThe `derive_key` function takes two inputs:\n\n1. **`pin`** \u2014 the user\u0027s chosen sync PIN (used as the password)\n2. **`salt_hex`** \u2014 a server-provided 32-byte random hex string (generated on first PIN setup)\n\n### Parameters\n\n| Parameter | Value |\n|---|---|\n| Algorithm | PBKDF2-HMAC-SHA256 |\n| Iterations | **600,000** |\n| Output key length | **256 bits** (32 bytes) |\n| Salt prefix | `b\"ctxovrflw-zk-v1-\"` |\n\n### Step-by-step process\n\n1. **Decode the hex salt** \u2014 The server-provided `salt_hex` string is decoded from hex into raw bytes.\n2. **Construct the full salt** \u2014 The constant prefix `ctxovrflw-zk-v1-` is prepended to the decoded salt bytes. This domain-separates the key derivation to prevent cross-protocol attacks.\n3. **Run PBKDF2** \u2014 The PIN (as UTF-8 bytes) and the combined salt are fed into PBKDF2-HMAC-SHA256 for 600,000 iterations, producing a 32-byte (256-bit) key.\n\n```rust\npub fn derive_key(pin: \u0026str, salt_hex: \u0026str) -\u003e [u8; KEY_LEN] {\n    let salt_bytes = hex_decode(salt_hex).unwrap_or_default();\n    let mut salt = Vec::with_capacity(SALT_PREFIX.len() + salt_bytes.len());\n    salt.extend_from_slice(SALT_PREFIX);       // \"ctxovrflw-zk-v1-\"\n    salt.extend_from_slice(\u0026salt_bytes);        // server-provided random salt\n\n    let mut key = [0u8; KEY_LEN];              // 32 bytes\n    pbkdf2::derive(\n        pbkdf2::PBKDF2_HMAC_SHA256,\n        NonZeroU32::new(PBKDF2_ITERATIONS).unwrap(), // 600,000\n        \u0026salt,\n        pin.as_bytes(),\n        \u0026mut key,\n    );\n    key\n}\n```\n\n### How the derived key is used\n\nThe resulting 256-bit key is used with **AES-256-GCM** to encrypt/decrypt memories client-side before syncing to the cloud. This is a **zero-knowledge** design \u2014 the server never sees plaintext.\n\n### PIN Verification\n\nTo verify a PIN is correct without storing it, the system uses a **verifier**: the string `\"ctxovrflw-pin-verify\"` encrypted with the derived key. On subsequent PIN entries, if decrypting the verifier yields that known string, the PIN is correct. If decryption fails (AES-GCM tag mismatch), the PIN is wrong.",
+      "input_tokens": 18414,
+      "keyword_score": 0.6,
+      "llm_judge_score": null,
+      "mode": "directed",
+      "output_tokens": 754,
+      "platform": "claude",
+      "scenario_id": "cr_1_pin_derivation",
+      "timestamp": "2026-02-16 18:17:05 UTC",
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "total_tokens": 19168
+    },
+    {
+      "composite_score": 0.8,
+      "elapsed_ms": 45165.441274642944,
+      "error": null,
+      "final_answer": "Here\u0027s how the PIN encryption key is derived in ctxovrflw:\n\n## Key Derivation Process\n\nThe encryption key is derived from the user\u0027s **sync PIN** using **PBKDF2-HMAC-SHA256** with the following parameters:\n\n| Parameter | Value |\n|---|---|\n| **Algorithm** | PBKDF2-HMAC-SHA256 |\n| **Iterations** | 600,000 |\n| **Output key length** | 256 bits (32 bytes) |\n| **Input** | User-chosen sync PIN |\n\n### Salt Construction\n\nThe salt is constructed in two parts:\n\n1. **Prefix**: The constant byte string `ctxovrflw-zk-v1-`\n2. **Server salt**: A random 32-byte hex string generated by the server when the user first sets up their PIN\n\nThese are concatenated: `ctxovrflw-zk-v1-` + `\u003cdecoded server salt bytes\u003e`\n\n### In code (`src/crypto/mod.rs`):\n\n```rust\npub fn derive_key(pin: \u0026str, salt_hex: \u0026str) -\u003e [u8; 32] {\n    let salt_bytes = hex_decode(salt_hex);\n    let mut salt = SALT_PREFIX + salt_bytes;  // \"ctxovrflw-zk-v1-\" + random bytes\n\n    pbkdf2::derive(\n        PBKDF2_HMAC_SHA256,\n        600_000 iterations,\n        \u0026salt,\n        pin.as_bytes(),\n        \u0026mut key,\n    );\n    key\n}\n```\n\n### Key Points\n\n- **Zero-knowledge design** \u2014 the server never sees the PIN or derived key; all encryption/decryption happens client-side.\n- **Server-generated random salt** (since v0.4.2) \u2014 previously the user\u0027s email was used as salt, but this was replaced for better security.\n- **PIN verification** \u2014 a verifier is created by encrypting the known string `\"ctxovrflw-pin-verify\"` with the derived key. This lets the client check if a PIN is correct without storing the key itself.\n- The derived key is then used for **AES-256-GCM** encryption of individual memories, each with a unique 12-byte random nonce.",
+      "input_tokens": 71568,
+      "keyword_score": 0.8,
+      "llm_judge_score": null,
+      "mode": "ctxovrflw",
+      "output_tokens": 976,
+      "platform": "claude",
+      "scenario_id": "cr_1_pin_derivation",
+      "timestamp": "2026-02-16 18:17:52 UTC",
+      "tool_call_count": 5,
+      "tool_call_names": [
+        "Task",
+        "Bash",
+        "Bash",
+        "Grep",
+        "Read"
+      ],
+      "total_tokens": 72544
+    }
+  ],
+  "summary": {
+    "avg_composite_score": 0.7808080808080808,
+    "avg_elapsed_ms": 82482.62974951003,
+    "avg_tool_calls": 17.38888888888889,
+    "avg_total_tokens": 83165.05555555556,
+    "by_mode": {
+      "baseline": {
+        "avg_composite_score": 0.7743867243867243,
+        "avg_elapsed_ms": 61672.98916975657,
+        "avg_tool_calls": 18.666666666666668,
+        "avg_total_tokens": 98177.33333333333,
+        "count": 6,
+        "errors": 0
+      },
+      "ctxovrflw": {
+        "avg_composite_score": 0.7351731601731601,
+        "avg_elapsed_ms": 89762.5577847163,
+        "avg_tool_calls": 16.0,
+        "avg_total_tokens": 61473.666666666664,
+        "count": 6,
+        "errors": 0
+      },
+      "directed": {
+        "avg_composite_score": 0.8328643578643579,
+        "avg_elapsed_ms": 96012.3422940572,
+        "avg_tool_calls": 17.5,
+        "avg_total_tokens": 89844.16666666667,
+        "count": 6,
+        "errors": 0
+      }
+    },
+    "errors": 0,
+    "modes": [
+      "baseline",
+      "ctxovrflw",
+      "directed"
+    ],
+    "platforms": [
+      "claude"
+    ],
+    "total_runs": 18,
+    "total_scenarios": 6
+  },
+  "total_runs": 18
+}</pre>
+            </details>
+        </div>
+    </div>
+
+    <script>
+        // Chart.js configuration
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        };
+
+        // Tool Calls Chart
+        new Chart(document.getElementById('toolCallsChart'), {
+            type: 'bar',
+            data: {
+                labels: ["baseline", "directed", "ctxovrflw"],
+                datasets: [{
+                    label: 'Average Tool Calls',
+                    data: [18.666666666666668, 17.5, 16.0],
+                    backgroundColor: ['#ffc107', '#17a2b8', '#28a745'],
+                    borderColor: ['#e0a800', '#138496', '#1e7e34'],
+                    borderWidth: 1
+                }]
+            },
+            options: chartOptions
+        });
+
+        // Latency Chart  
+        new Chart(document.getElementById('latencyChart'), {
+            type: 'bar',
+            data: {
+                labels: ["baseline", "directed", "ctxovrflw"],
+                datasets: [{
+                    label: 'Average Latency (ms)',
+                    data: [61672.98916975657, 96012.3422940572, 89762.5577847163],
+                    backgroundColor: ['#ffc107', '#17a2b8', '#28a745'],
+                    borderColor: ['#e0a800', '#138496', '#1e7e34'],
+                    borderWidth: 1
+                }]
+            },
+            options: chartOptions
+        });
+
+        // Token Chart (stacked)
+        new Chart(document.getElementById('tokenChart'), {
+            type: 'bar',
+            data: {
+                labels: ["baseline", "directed", "ctxovrflw"],
+                datasets: [
+                    {
+                        label: 'Input Tokens',
+                        data: [96324.5, 88326.33333333333, 60187.833333333336],
+                        backgroundColor: '#36a2eb',
+                        stack: 'tokens'
+                    },
+                    {
+                        label: 'Output Tokens', 
+                        data: [1852.8333333333333, 1517.8333333333333, 1285.8333333333333],
+                        backgroundColor: '#ff6384',
+                        stack: 'tokens'
+                    }
+                ]
+            },
+            options: {
+                ...chartOptions,
+                scales: {
+                    ...chartOptions.scales,
+                    x: {
+                        stacked: true
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+
+        // Score Chart
+        new Chart(document.getElementById('scoreChart'), {
+            type: 'bar',
+            data: {
+                labels: ["baseline", "directed", "ctxovrflw"],
+                datasets: [{
+                    label: 'Average Composite Score',
+                    data: [0.7743867243867243, 0.8328643578643579, 0.7351731601731601],
+                    backgroundColor: ['#ffc107', '#17a2b8', '#28a745'],
+                    borderColor: ['#e0a800', '#138496', '#1e7e34'],
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                ...chartOptions,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 1.0
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+        

@@ -1,0 +1,16 @@
+# ctxovrflw Benchmark Suite Requirements
+
+# Core dependencies
+jinja2>=3.1.0
+requests>=2.31.0
+
+# Optional: Claude Agent SDK (for Claude Code platform)
+# Requires ANTHROPIC_API_KEY environment variable
+claude-agent-sdk>=0.1.0
+
+# Token counting (for rough estimation when exact counts unavailable)
+tiktoken>=0.5.0
+
+# Development and testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

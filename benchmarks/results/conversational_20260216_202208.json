@@ -1,0 +1,630 @@
+{
+  "benchmark": "conversational_memory",
+  "completed_at": "2026-02-16T20:22:08.488593",
+  "scenarios": 11,
+  "results": [
+    {
+      "scenario_id": "pref_1_coding_style",
+      "category": "Preferences",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 6629.077196121216,
+      "input_tokens": 15837,
+      "output_tokens": 102,
+      "total_tokens": 15939,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "snake_case",
+        "unwrap",
+        "thiserror",
+        "clippy"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about Max's coding conventions or preferences for Rust projects. I don't have access to any external memory, context systems, or prior conversations that would tell me abo",
+      "error": null
+    },
+    {
+      "scenario_id": "pref_1_coding_style",
+      "category": "Preferences",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11799.656867980957,
+      "input_tokens": 41138,
+      "output_tokens": 302,
+      "total_tokens": 41440,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "snake_case",
+        "unwrap",
+        "thiserror",
+        "clippy"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "I found Max's Rust coding preferences stored in memory. Here's what Max prefers for Rust projects:\n\n1. **Naming convention**: `snake_case` everywhere\n2. **Error handling**:\n   - Never use `unwrap()` i",
+      "error": null
+    },
+    {
+      "scenario_id": "pref_2_communication",
+      "category": "Preferences",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 7165.060520172119,
+      "input_tokens": 15835,
+      "output_tokens": 131,
+      "total_tokens": 15966,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "bullet",
+        "brief",
+        "blocked",
+        "done",
+        "routine"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a person named \"Max\" or their preferences for receiving status updates. I don't have access to any context about who Max is or what your relationship with them invol",
+      "error": null
+    },
+    {
+      "scenario_id": "pref_2_communication",
+      "category": "Preferences",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11340.296030044556,
+      "input_tokens": 41054,
+      "output_tokens": 275,
+      "total_tokens": 41329,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "bullet",
+        "brief",
+        "blocked",
+        "done",
+        "routine"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Based on what I have stored in memory, here's how Max likes to receive status updates:\n\n- **Brief bullet points only** \u2014 no lengthy narratives or detailed prose\n- **Report when something is blocked or",
+      "error": null
+    },
+    {
+      "scenario_id": "fact_1_api_choice",
+      "category": "Facts",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 12188.311100006104,
+      "input_tokens": 15840,
+      "output_tokens": 376,
+      "total_tokens": 16216,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "Hono",
+        "Bun",
+        "faster",
+        "Express"
+      ],
+      "missed_keywords": [
+        "Zod"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any context about your specific project or the decisions your team made regarding choosing Hono over Express for your cloud API. I don't have access to your project's documentation, archi",
+      "error": null
+    },
+    {
+      "scenario_id": "fact_1_api_choice",
+      "category": "Facts",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11642.666101455688,
+      "input_tokens": 41866,
+      "output_tokens": 311,
+      "total_tokens": 42177,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "Hono",
+        "Bun",
+        "faster",
+        "Express",
+        "Zod"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "I have that decision recorded! Here's why we chose **Hono over Express** for the cloud API:\n\n1. **Native Bun support** \u2014 Hono runs natively on Bun without needing an adapter, which simplifies the stac",
+      "error": null
+    },
+    {
+      "scenario_id": "fact_2_pricing",
+      "category": "Facts",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 5970.253229141235,
+      "input_tokens": 15845,
+      "output_tokens": 110,
+      "total_tokens": 15955,
+      "keyword_coverage": 0.14285714285714285,
+      "hit_keywords": [
+        "Pro"
+      ],
+      "missed_keywords": [
+        "Free",
+        "Standard",
+        "keyword",
+        "semantic",
+        "hybrid",
+        "knowledge graph"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about \"ctxovrflw\" or its pricing tiers in my training data. This doesn't appear to be a widely known product or service that I have knowledge of.\n\nIt's possible that:\n- It",
+      "error": null
+    },
+    {
+      "scenario_id": "fact_2_pricing",
+      "category": "Facts",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__status"
+      ],
+      "elapsed_ms": 14919.694185256958,
+      "input_tokens": 41134,
+      "output_tokens": 452,
+      "total_tokens": 41586,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "Free",
+        "Standard",
+        "Pro",
+        "keyword",
+        "semantic",
+        "hybrid",
+        "knowledge graph"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's a breakdown of the **ctxovrflw pricing tiers**:\n\n---\n\n### \ud83c\udd93 Free Tier \u2014 $0/month\n- **Keyword search** only\n- Up to **1,000 memories**\n- **Local storage** only (no cloud sync)\n- Great for trying",
+      "error": null
+    },
+    {
+      "scenario_id": "rel_1_collaborator",
+      "category": "Relationships",
+      "mode": "baseline",
+      "tool_calls": 26,
+      "tool_details": [
+        "Task",
+        "Grep",
+        "Glob",
+        "Glob",
+        "Bash",
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Bash",
+        "Bash",
+        "Grep",
+        "Bash",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Bash",
+        "Bash",
+        "Grep"
+      ],
+      "elapsed_ms": 91439.02540206909,
+      "input_tokens": 33592,
+      "output_tokens": 574,
+      "total_tokens": 34166,
+      "keyword_coverage": 0.4,
+      "hit_keywords": [
+        "Jake",
+        "ONNX"
+      ],
+      "missed_keywords": [
+        "ARM64",
+        "ORT_DYLIB_PATH",
+        "CI"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Based on my thorough search of the codebase, here's what I found:\n\n## ONNX Integration Contributor\n\nThe **entire ONNX integration was built solely by Max B** (`max@srv1370565.hstgr.cloud`), who is the",
+      "error": null
+    },
+    {
+      "scenario_id": "rel_1_collaborator",
+      "category": "Relationships",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 10992.911577224731,
+      "input_tokens": 41635,
+      "output_tokens": 300,
+      "total_tokens": 41935,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "Jake",
+        "ONNX",
+        "ARM64",
+        "ORT_DYLIB_PATH",
+        "CI"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's what I have stored about the ONNX integration:\n\n**Jake** (from the Rust Discord) helped with the ONNX integration. Specifically:\n\n- He **debugged ONNX runtime linking issues on ARM64 Linux**\n- ",
+      "error": null
+    },
+    {
+      "scenario_id": "rel_2_user_feedback",
+      "category": "Relationships",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 8329.846143722534,
+      "input_tokens": 15837,
+      "output_tokens": 215,
+      "total_tokens": 16052,
+      "keyword_coverage": 0.2,
+      "hit_keywords": [
+        "Tom"
+      ],
+      "missed_keywords": [
+        "Sarah",
+        "init",
+        "latency",
+        "privacy"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about your early beta testers or their feedback. I don't have access to your company's internal data, customer feedback systems, survey results, or any proprietary busines",
+      "error": null
+    },
+    {
+      "scenario_id": "rel_2_user_feedback",
+      "category": "Relationships",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 10483.823299407959,
+      "input_tokens": 41354,
+      "output_tokens": 300,
+      "total_tokens": 41654,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "Sarah",
+        "Tom",
+        "init",
+        "privacy"
+      ],
+      "missed_keywords": [
+        "latency"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's what I have stored from our early beta testers:\n\n- **Sarah (designer):** Said the **init wizard was confusing** and needed better defaults.\n- **Tom (backend dev):** Reported that **recall was t",
+      "error": null
+    },
+    {
+      "scenario_id": "proj_1_roadmap",
+      "category": "Project Context",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 8011.884450912476,
+      "input_tokens": 15841,
+      "output_tokens": 158,
+      "total_tokens": 15999,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "team",
+        "shared",
+        "VS Code",
+        "extension",
+        "dashboard",
+        "visualization"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a project or product called \"ctxovrflw.\" This doesn't match anything in my training data, and I don't have access to any external roadmaps, project plans, or documen",
+      "error": null
+    },
+    {
+      "scenario_id": "proj_1_roadmap",
+      "category": "Project Context",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11174.486875534058,
+      "input_tokens": 41782,
+      "output_tokens": 285,
+      "total_tokens": 42067,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "team",
+        "shared",
+        "VS Code",
+        "extension",
+        "dashboard",
+        "visualization"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "I found the roadmap info in memory. The next three features planned for **ctxovrflw** are:\n\n1. **Team/Org Shared Memory Spaces** \u2014 Multiple agents (or team members) can share a memory namespace, enabl",
+      "error": null
+    },
+    {
+      "scenario_id": "proj_2_competitor",
+      "category": "Project Context",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 7211.646318435669,
+      "input_tokens": 15849,
+      "output_tokens": 137,
+      "total_tokens": 15986,
+      "keyword_coverage": 0.16666666666666666,
+      "hit_keywords": [
+        "Mem0"
+      ],
+      "missed_keywords": [
+        "cloud",
+        "local-first",
+        "zero-knowledge",
+        "MCP",
+        "Rust"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have specific information about \"ctxovrflw\" or how it compares to Mem0. These appear to be products/projects that I don't have details about in my training data.\n\nTo help you, I could:\n\n1. **S",
+      "error": null
+    },
+    {
+      "scenario_id": "proj_2_competitor",
+      "category": "Project Context",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 18970.92366218567,
+      "input_tokens": 42983,
+      "output_tokens": 651,
+      "total_tokens": 43634,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "Mem0",
+        "cloud",
+        "local-first",
+        "zero-knowledge",
+        "MCP",
+        "Rust"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Great \u2014 I've got the competitive analysis stored in memory. Here's the breakdown:\n\n## ctxovrflw vs Mem0\n\n| | **ctxovrflw** | **Mem0** |\n|---|---|---|\n| **Architecture** | Local-first Rust daemon | Clo",
+      "error": null
+    },
+    {
+      "scenario_id": "agent_1_other_work",
+      "category": "Cross-Agent",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 8348.05941581726,
+      "input_tokens": 15836,
+      "output_tokens": 131,
+      "total_tokens": 15967,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "0.0.0.0",
+        "binding",
+        "validation",
+        "rate limiting",
+        "device auth"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about a security audit agent or its findings from last week. I don't have access to any external memory, context systems, or logs from previous sessions \u2014 I only have what",
+      "error": null
+    },
+    {
+      "scenario_id": "agent_1_other_work",
+      "category": "Cross-Agent",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 12958.649396896362,
+      "input_tokens": 41658,
+      "output_tokens": 386,
+      "total_tokens": 42044,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "0.0.0.0",
+        "binding",
+        "validation",
+        "rate limiting",
+        "device auth"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's what the security audit agent found last week. Three issues were identified, all of which have been fixed and shipped in **v0.3.7**:\n\n### \ud83d\udd34 CRITICAL \u2014 Daemon Binding to 0.0.0.0\nThe daemon was b",
+      "error": null
+    },
+    {
+      "scenario_id": "agent_2_deploy_history",
+      "category": "Cross-Agent",
+      "mode": "baseline",
+      "tool_calls": 40,
+      "tool_details": [
+        "Task",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Glob",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read",
+        "Read",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Bash",
+        "Read"
+      ],
+      "elapsed_ms": 68031.64553642273,
+      "input_tokens": 34062,
+      "output_tokens": 660,
+      "total_tokens": 34722,
+      "keyword_coverage": 0.2,
+      "hit_keywords": [
+        "February"
+      ],
+      "missed_keywords": [
+        "v0.4.2",
+        "PIN",
+        "salt",
+        "per-device"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "Here's a summary of what I found:\n\n## Last Deployment & Version\n\n**Latest tagged release:** **v0.2.7** \u2014 released on **February 16, 2026** (today)\n\n### Version Overview\n\n| Component | Version |\n|-----",
+      "error": null
+    },
+    {
+      "scenario_id": "agent_2_deploy_history",
+      "category": "Cross-Agent",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11070.842266082764,
+      "input_tokens": 41495,
+      "output_tokens": 305,
+      "total_tokens": 41800,
+      "keyword_coverage": 0.8,
+      "hit_keywords": [
+        "v0.4.2",
+        "PIN",
+        "salt",
+        "per-device"
+      ],
+      "missed_keywords": [
+        "February"
+      ],
+      "admits_no_knowledge": false,
+      "answer_preview": "The last deployment was **today (2026-02-16)** \u2014 **v0.4.2** of ctxovrflw.\n\n**Key changes in v0.4.2:**\n- **Server-side PIN salt** \u2014 eliminates email dependency in key derivation\n- **Per-device API keys",
+      "error": null
+    },
+    {
+      "scenario_id": "remind_1_todo",
+      "category": "Reminders",
+      "mode": "baseline",
+      "tool_calls": 0,
+      "tool_details": [],
+      "elapsed_ms": 8345.25752067566,
+      "input_tokens": 15843,
+      "output_tokens": 201,
+      "total_tokens": 16044,
+      "keyword_coverage": 0.0,
+      "hit_keywords": [],
+      "missed_keywords": [
+        "update",
+        "WSL",
+        "VPS",
+        "login",
+        "PIN",
+        "reset"
+      ],
+      "admits_no_knowledge": true,
+      "answer_preview": "I don't have any information about your deployment plans or tasks related to a v0.4.2 deploy. I don't have access to any external memory, notes, task lists, or previous conversations that would contai",
+      "error": null
+    },
+    {
+      "scenario_id": "remind_1_todo",
+      "category": "Reminders",
+      "mode": "ctxovrflw",
+      "tool_calls": 2,
+      "tool_details": [
+        "mcp__ctxovrflw__recall",
+        "mcp__ctxovrflw__recall"
+      ],
+      "elapsed_ms": 11886.754035949707,
+      "input_tokens": 41846,
+      "output_tokens": 389,
+      "total_tokens": 42235,
+      "keyword_coverage": 1.0,
+      "hit_keywords": [
+        "update",
+        "WSL",
+        "VPS",
+        "login",
+        "PIN",
+        "reset"
+      ],
+      "missed_keywords": [],
+      "admits_no_knowledge": false,
+      "answer_preview": "Found it! Here's what you needed to do after the v0.4.2 deploy:\n\n1. **Run `ctxovrflw update`** on both **WSL** and **VPS**\n2. **Re-login on WSL first**: Run `ctxovrflw logout && ctxovrflw login` on WS",
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,663 @@
+{
+  "phase": "recall_quality",
+  "completed_at": "2026-02-16T19:24:39.314923",
+  "scenario_count": 9,
+  "tiers": [
+    "free",
+    "standard",
+    "pro"
+  ],
+  "results": [
+    {
+      "scenario_id": "ar_1_encryption",
+      "category": "Accurate Retrieval",
+      "question": "What encryption algorithm does ctxovrflw use for sync? What are the PBKDF2 parameters?",
+      "ground_truth_keywords": [
+        "AES-256-GCM",
+        "PBKDF2",
+        "600,000",
+        "SHA-256",
+        "salt",
+        "encryption",
+        "ctxovrflw-zk-v1-"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 2.471446990966797,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "AES-256-GCM",
+            "PBKDF2",
+            "600,000",
+            "SHA-256",
+            "salt",
+            "encryption",
+            "ctxovrflw-zk-v1-"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 11.29462951762024
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 18.85223388671875,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "AES-256-GCM",
+            "PBKDF2",
+            "600,000",
+            "SHA-256",
+            "salt",
+            "encryption",
+            "ctxovrflw-zk-v1-"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.658665698538071
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 22.754669189453125,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "AES-256-GCM",
+            "PBKDF2",
+            "600,000",
+            "SHA-256",
+            "salt",
+            "encryption",
+            "ctxovrflw-zk-v1-"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.07537508597959418
+        }
+      }
+    },
+    {
+      "scenario_id": "ar_2_hybrid_search",
+      "category": "Accurate Retrieval",
+      "question": "How does the hybrid search work? What fusion method is used?",
+      "ground_truth_keywords": [
+        "hybrid",
+        "semantic",
+        "lexical",
+        "BM25",
+        "embeddings",
+        "Reciprocal Rank Fusion",
+        "RRF",
+        "k=60"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 3.401517868041992,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "hybrid",
+            "semantic",
+            "lexical",
+            "BM25",
+            "embeddings",
+            "Reciprocal Rank Fusion",
+            "RRF",
+            "k=60"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 13.029008368293677
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 20.294666290283203,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "hybrid",
+            "semantic",
+            "lexical",
+            "BM25",
+            "embeddings",
+            "Reciprocal Rank Fusion",
+            "RRF",
+            "k=60"
+          ],
+          "missed_keywords": [],
+          "result_count": 6,
+          "top_score": 0.5025576938756373
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 22.265195846557617,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "hybrid",
+            "semantic",
+            "lexical",
+            "BM25",
+            "embeddings",
+            "Reciprocal Rank Fusion",
+            "RRF",
+            "k=60"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.07630847128797949
+        }
+      }
+    },
+    {
+      "scenario_id": "ar_3_ci_platforms",
+      "category": "Accurate Retrieval",
+      "question": "What platforms does the CI build for? List all 5.",
+      "ground_truth_keywords": [
+        "Linux x64",
+        "Linux ARM64",
+        "Windows x64",
+        "macOS x64",
+        "macOS ARM64"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 3.203153610229492,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "Linux x64",
+            "Linux ARM64",
+            "Windows x64",
+            "macOS x64",
+            "macOS ARM64"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 8.137731899798023
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 20.51067352294922,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "Linux x64",
+            "Linux ARM64",
+            "Windows x64",
+            "macOS x64",
+            "macOS ARM64"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.747213545476809
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 21.96788787841797,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "Linux x64",
+            "Linux ARM64",
+            "Windows x64",
+            "macOS x64",
+            "macOS ARM64"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.0637801061386466
+        }
+      }
+    },
+    {
+      "scenario_id": "ttl_1_deploy",
+      "category": "Test-Time Learning",
+      "question": "How do I deploy a new version of ctxovrflw?",
+      "ground_truth_keywords": [
+        "scripts/deploy.sh",
+        "deploy",
+        "script",
+        "M4cs/ctxovrflw-client",
+        "public",
+        "repo",
+        "tag",
+        "CI",
+        "trigger"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 3.1785964965820312,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "scripts/deploy.sh",
+            "deploy",
+            "script",
+            "M4cs/ctxovrflw-client",
+            "public",
+            "repo",
+            "tag",
+            "CI",
+            "trigger"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 8.548362131028643
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 21.047353744506836,
+          "error": null,
+          "coverage": 0.8888888888888888,
+          "hit_keywords": [
+            "scripts/deploy.sh",
+            "deploy",
+            "script",
+            "M4cs/ctxovrflw-client",
+            "public",
+            "repo",
+            "CI",
+            "trigger"
+          ],
+          "missed_keywords": [
+            "tag"
+          ],
+          "result_count": 8,
+          "top_score": 0.4806843574024242
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 21.518230438232422,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "scripts/deploy.sh",
+            "deploy",
+            "script",
+            "M4cs/ctxovrflw-client",
+            "public",
+            "repo",
+            "tag",
+            "CI",
+            "trigger"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.04814747488101534
+        }
+      }
+    },
+    {
+      "scenario_id": "lru_1_auth_flow",
+      "category": "Long-Range Understanding",
+      "question": "Trace the full auth flow from device code request to first encrypted sync. What are all the steps?",
+      "ground_truth_keywords": [
+        "device code",
+        "OAuth",
+        "token",
+        "PIN",
+        "encryption",
+        "key derivation",
+        "encrypted sync",
+        "upload"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 3.7860870361328125,
+          "error": null,
+          "coverage": 0.875,
+          "hit_keywords": [
+            "device code",
+            "OAuth",
+            "token",
+            "PIN",
+            "encryption",
+            "key derivation",
+            "encrypted sync"
+          ],
+          "missed_keywords": [
+            "upload"
+          ],
+          "result_count": 8,
+          "top_score": 18.072539255163637
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 21.177291870117188,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "device code",
+            "OAuth",
+            "token",
+            "PIN",
+            "encryption",
+            "key derivation",
+            "encrypted sync",
+            "upload"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.7030966226575526
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 23.228168487548828,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "device code",
+            "OAuth",
+            "token",
+            "PIN",
+            "encryption",
+            "key derivation",
+            "encrypted sync",
+            "upload"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.059113777089783284
+        }
+      }
+    },
+    {
+      "scenario_id": "cr_1_pin_derivation",
+      "category": "Conflict Resolution",
+      "question": "How is the PIN encryption key derived?",
+      "ground_truth_keywords": [
+        "server-generated",
+        "random",
+        "salt",
+        "PIN",
+        "encryption",
+        "key",
+        "v0.4.2",
+        "current"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 3.147125244140625,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "server-generated",
+            "random",
+            "salt",
+            "PIN",
+            "encryption",
+            "key",
+            "v0.4.2",
+            "current"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 8.917824808356695
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 17.889976501464844,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "server-generated",
+            "random",
+            "salt",
+            "PIN",
+            "encryption",
+            "key",
+            "v0.4.2",
+            "current"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.661330779359103
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 20.99156379699707,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "server-generated",
+            "random",
+            "salt",
+            "PIN",
+            "encryption",
+            "key",
+            "v0.4.2",
+            "current"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.04622110501800164
+        }
+      }
+    },
+    {
+      "scenario_id": "tier_1_vague_query",
+      "category": "Tier Comparison",
+      "question": "How does the project handle security for data at rest?",
+      "ground_truth_keywords": [
+        "AES-256-GCM",
+        "encryption",
+        "PBKDF2",
+        "zero-knowledge",
+        "encrypted data",
+        "salt",
+        "PIN"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 2.329587936401367,
+          "error": null,
+          "coverage": 0.5714285714285714,
+          "hit_keywords": [
+            "zero-knowledge",
+            "encrypted data",
+            "salt",
+            "PIN"
+          ],
+          "missed_keywords": [
+            "AES-256-GCM",
+            "encryption",
+            "PBKDF2"
+          ],
+          "result_count": 8,
+          "top_score": 6.489581647411132
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 18.416166305541992,
+          "error": null,
+          "coverage": 0.5714285714285714,
+          "hit_keywords": [
+            "encryption",
+            "zero-knowledge",
+            "encrypted data",
+            "PIN"
+          ],
+          "missed_keywords": [
+            "AES-256-GCM",
+            "PBKDF2",
+            "salt"
+          ],
+          "result_count": 8,
+          "top_score": 0.38456631954568365
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 20.054101943969727,
+          "error": null,
+          "coverage": 0.7142857142857143,
+          "hit_keywords": [
+            "encryption",
+            "zero-knowledge",
+            "encrypted data",
+            "salt",
+            "PIN"
+          ],
+          "missed_keywords": [
+            "AES-256-GCM",
+            "PBKDF2"
+          ],
+          "result_count": 8,
+          "top_score": 0.046875
+        }
+      }
+    },
+    {
+      "scenario_id": "tier_2_conceptual_query",
+      "category": "Tier Comparison",
+      "question": "What prevents the cloud service from reading user data?",
+      "ground_truth_keywords": [
+        "zero-knowledge",
+        "cannot decrypt",
+        "encrypted",
+        "encrypt",
+        "PIN",
+        "key derivation",
+        "server"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 2.7077198028564453,
+          "error": null,
+          "coverage": 0.7142857142857143,
+          "hit_keywords": [
+            "zero-knowledge",
+            "cannot decrypt",
+            "encrypted",
+            "encrypt",
+            "server"
+          ],
+          "missed_keywords": [
+            "PIN",
+            "key derivation"
+          ],
+          "result_count": 6,
+          "top_score": 8.282465028697928
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 19.762516021728516,
+          "error": null,
+          "coverage": 0.8571428571428571,
+          "hit_keywords": [
+            "zero-knowledge",
+            "cannot decrypt",
+            "encrypted",
+            "encrypt",
+            "PIN",
+            "server"
+          ],
+          "missed_keywords": [
+            "key derivation"
+          ],
+          "result_count": 7,
+          "top_score": 0.3712283478684455
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 19.70672607421875,
+          "error": null,
+          "coverage": 0.7142857142857143,
+          "hit_keywords": [
+            "zero-knowledge",
+            "cannot decrypt",
+            "encrypted",
+            "encrypt",
+            "server"
+          ],
+          "missed_keywords": [
+            "PIN",
+            "key derivation"
+          ],
+          "result_count": 8,
+          "top_score": 0.032018442622950824
+        }
+      }
+    },
+    {
+      "scenario_id": "tier_3_multi_concept",
+      "category": "Tier Comparison",
+      "question": "How does the system ensure data integrity and consistency across multiple devices?",
+      "ground_truth_keywords": [
+        "sync",
+        "incremental",
+        "conflict",
+        "encrypted",
+        "upload",
+        "download",
+        "resolution"
+      ],
+      "tiers": {
+        "free": {
+          "method": "keyword",
+          "elapsed_ms": 2.5377273559570312,
+          "error": null,
+          "coverage": 0.14285714285714285,
+          "hit_keywords": [
+            "encrypted"
+          ],
+          "missed_keywords": [
+            "sync",
+            "incremental",
+            "conflict",
+            "upload",
+            "download",
+            "resolution"
+          ],
+          "result_count": 5,
+          "top_score": 4.141232514348964
+        },
+        "standard": {
+          "method": "semantic",
+          "elapsed_ms": 17.39788055419922,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "sync",
+            "incremental",
+            "conflict",
+            "encrypted",
+            "upload",
+            "download",
+            "resolution"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.39736521367169075
+        },
+        "pro": {
+          "method": "hybrid",
+          "elapsed_ms": 21.004199981689453,
+          "error": null,
+          "coverage": 1.0,
+          "hit_keywords": [
+            "sync",
+            "incremental",
+            "conflict",
+            "encrypted",
+            "upload",
+            "download",
+            "resolution"
+          ],
+          "missed_keywords": [],
+          "result_count": 8,
+          "top_score": 0.03021353930031804
+        }
+      }
+    }
+  ]
+}
