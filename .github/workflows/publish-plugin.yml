@@ -31,6 +31,21 @@ jobs:
           fi
           echo "✅ Publishing v$PKG_VERSION"
 
+      - name: Install dependencies
+        working-directory: ctxovrflw
+        run: npm install
+
+      - name: Build
+        working-directory: ctxovrflw
+        run: npm run build
+
+      - name: Verify build output
+        working-directory: ctxovrflw
+        run: |
+          test -f dist/index.js || (echo "❌ dist/index.js missing" && exit 1)
+          test -f dist/index.d.ts || (echo "❌ dist/index.d.ts missing" && exit 1)
+          echo "✅ Build output verified"
+
       - name: Publish to npm
         working-directory: ctxovrflw
         run: npm publish --access public

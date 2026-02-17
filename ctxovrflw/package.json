@@ -1,6 +1,6 @@
 {
   "name": "@ctxovrflw/memory-ctxovrflw",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "ctxovrflw memory plugin for OpenClaw — shared AI memory layer with semantic search, knowledge graph, and cross-tool recall",
   "license": "MIT",
   "author": "ctxovrflw",
@@ -9,6 +9,15 @@
     "type": "git",
     "url": "git+https://github.com/M4cs/ctxovrflw-client.git",
     "directory": "ctxovrflw"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "keywords": [
     "openclaw",
@@ -19,13 +28,26 @@
     "semantic-search",
     "knowledge-graph"
   ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.1.0"
+  },
+  "devDependencies": {
+    "openclaw": "*",
+    "typescript": "^5.7.0"
+  },
   "openclaw": {
     "extensions": [
-      "./index.ts"
+      "./dist/index.js"
     ]
   },
   "files": [
-    "index.ts",
+    "dist",
     "openclaw.plugin.json",
     "README.md"
   ],
