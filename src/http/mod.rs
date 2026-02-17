@@ -29,8 +29,8 @@ async fn auth_middleware(
 ) -> Response {
     let path = request.uri().path().to_string();
 
-    // Skip auth for health endpoints
-    if path == "/" || path == "/health" {
+    // Skip auth for health and MCP endpoints (MCP is how external agents connect)
+    if path == "/" || path == "/health" || path.starts_with("/mcp") {
         return next.run(request).await;
     }
 

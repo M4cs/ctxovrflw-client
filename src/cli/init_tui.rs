@@ -108,6 +108,7 @@ enum FlowState {
     DetectingTools,
     SelectingTools,
     InstallingTools,
+    ConfirmOverwrite,
     AskRules,
     InstallingRules,
     OpenClawIntegration,
@@ -157,6 +158,8 @@ struct App {
     has_rules_agents: bool,
     remote_url: String,
     tools_installed: Vec<String>,
+    pending_overwrites: Vec<(usize, PathBuf)>,
+    install_queue: Vec<usize>,
     service_installed: bool,
     service_running: bool,
 }
@@ -183,6 +186,8 @@ impl App {
             has_rules_agents: false,
             remote_url: String::new(),
             tools_installed: Vec::new(),
+            pending_overwrites: Vec::new(),
+            install_queue: Vec::new(),
             service_installed: false,
             service_running: false,
         }
@@ -310,6 +315,10 @@ impl App {
         self.interaction = Interaction::None;
         let url = init::mcp_sse_url(&self.cfg);
 
+        // Collect tools that need overwrite confirmation before installing
+        self.pending_overwrites.clear();
+        self.install_queue.clear();
+
         for &idx in &self.selected_tools.clone() {
             let agent = &self.detected_agents[idx];
             let name = agent.def.name;
@@ -319,39 +328,71 @@ impl App {
                 let cmd = cmd_template
                     .replace("{port}", &self.cfg.port.to_string())
                     .replace("http://127.0.0.1:{port}/mcp/sse", &url);
+                self.lines.push(LogLine::info(format!("→ {cmd}")));
                 let parts: Vec<&str> = cmd.split_whitespace().collect();
                 if parts.len() >= 2 {
-                    let ok = std::process::Command::new(parts[0])
+                    let output = std::process::Command::new(parts[0])
                         .args(&parts[1..])
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .status()
-                        .map(|s| s.success())
-                        .unwrap_or(false);
-                    if ok {
-                        self.lines.push(LogLine::ok(format!("{name} (CLI)")));
-                        self.tools_installed.push(name.to_string());
-                    } else {
-                        self.lines.push(LogLine::err(format!("{name} — run manually: {cmd}")));
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .output();
+                    match output {
+                        Ok(out) if out.status.success() => {
+                            self.lines.push(LogLine::ok(format!("{name} (CLI)")));
+                            let stdout = String::from_utf8_lossy(&out.stdout);
+                            let stderr = String::from_utf8_lossy(&out.stderr);
+                            for line in stdout.lines().chain(stderr.lines()).take(5) {
+                                if !line.trim().is_empty() {
+                                    self.lines.push(LogLine::plain(line.trim()));
+                                }
+                            }
+                            self.tools_installed.push(name.to_string());
+                        }
+                        Ok(out) => {
+                            let stderr = String::from_utf8_lossy(&out.stderr);
+                            self.lines.push(LogLine::err(format!("{name} — CLI failed")));
+                            for line in stderr.lines().take(3) {
+                                if !line.trim().is_empty() {
+                                    self.lines.push(LogLine::plain(format!("  {}", line.trim())));
+                                }
+                            }
+                            self.lines.push(LogLine::info(format!("Run manually: {cmd}")));
+                        }
+                        Err(_) => {
+                            self.lines.push(LogLine::err(format!("{name} — run manually: {cmd}")));
+                        }
                     }
                 }
                 continue;
             }
 
-            // JSON config
+            // JSON config — check if overwrite needed
             if !agent.def.config_paths.is_empty() {
                 let config_path = agent.config_path.clone().unwrap_or_else(|| {
                     init::resolve_config_path(&agent.def.config_paths[0])
                 });
-                let mcp_entry = init::sse_mcp_json(&self.cfg);
-                match write_mcp_config_quiet(&config_path, &mcp_entry) {
-                    Ok(_) => {
-                        self.lines.push(LogLine::ok(format!(
-                            "{name} → {}", config_path.display()
-                        )));
-                        self.tools_installed.push(name.to_string());
+
+                let needs_overwrite = config_path.exists() && {
+                    std::fs::read_to_string(&config_path)
+                        .ok()
+                        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+                        .and_then(|v| v.get("mcpServers")?.get("ctxovrflw").cloned())
+                        .is_some()
+                };
+
+                if needs_overwrite {
+                    self.pending_overwrites.push((idx, config_path));
+                } else {
+                    let mcp_entry = init::sse_mcp_json(&self.cfg);
+                    match write_mcp_config_quiet(&config_path, &mcp_entry) {
+                        Ok(_) => {
+                            self.lines.push(LogLine::ok(format!(
+                                "{name} → {}", config_path.display()
+                            )));
+                            self.tools_installed.push(name.to_string());
+                        }
+                        Err(e) => self.lines.push(LogLine::err(format!("{name}: {e}"))),
                     }
-                    Err(e) => self.lines.push(LogLine::err(format!("{name}: {e}"))),
                 }
                 continue;
             }
@@ -361,6 +402,30 @@ impl App {
             self.tools_installed.push(name.to_string());
         }
 
+        // If there are overwrite prompts, ask one by one
+        if !self.pending_overwrites.is_empty() {
+            self.ask_next_overwrite();
+            return;
+        }
+
+        self.finish_tool_install();
+    }
+
+    fn ask_next_overwrite(&mut self) {
+        if let Some((idx, _path)) = self.pending_overwrites.first() {
+            let name = self.detected_agents[*idx].def.name;
+            self.interaction = Interaction::Confirm {
+                prompt: format!("{name} already configured — overwrite?"),
+                default: false,
+            };
+            self.flow = FlowState::ConfirmOverwrite;
+        } else {
+            self.finish_tool_install();
+        }
+    }
+
+    fn finish_tool_install(&mut self) {
+        let url = init::mcp_sse_url(&self.cfg);
         self.lines.push(LogLine::blank());
         self.lines.push(LogLine::info(format!("Tools connect via {url}")));
 
@@ -740,6 +805,25 @@ impl App {
         self.interaction = Interaction::None;
 
         match self.flow {
+            FlowState::ConfirmOverwrite => {
+                let (idx, config_path) = self.pending_overwrites.remove(0);
+                let name = self.detected_agents[idx].def.name;
+                if yes {
+                    let mcp_entry = init::sse_mcp_json(&self.cfg);
+                    match write_mcp_config_quiet(&config_path, &mcp_entry) {
+                        Ok(_) => {
+                            self.lines.push(LogLine::ok(format!(
+                                "{name} → {} (overwritten)", config_path.display()
+                            )));
+                            self.tools_installed.push(name.to_string());
+                        }
+                        Err(e) => self.lines.push(LogLine::err(format!("{name}: {e}"))),
+                    }
+                } else {
+                    self.lines.push(LogLine::info(format!("{name} — skipped")));
+                }
+                self.ask_next_overwrite();
+            }
             FlowState::AskRules => {
                 if yes {
                     self.flow = FlowState::InstallingRules;
