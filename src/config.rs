@@ -10,6 +10,13 @@ pub struct Config {
     #[serde(default)]
     pub tier: Tier,
 
+    #[serde(default = "default_embedding_model")]
+    pub embedding_model: String,
+
+    // This is runtime-derived, not serialized
+    #[serde(skip)]
+    pub embedding_dim: usize,
+
     // Cloud settings
     #[serde(default = "default_cloud_url")]
     pub cloud_url: String,
@@ -138,6 +145,10 @@ fn default_auto_sync() -> bool {
     true
 }
 
+fn default_embedding_model() -> String {
+    "all-MiniLM-L6-v2".to_string()
+}
+
 impl Config {
     pub fn data_dir() -> Result<PathBuf> {
         let dir = dirs::home_dir()
@@ -172,13 +183,21 @@ impl Config {
 
     pub fn load() -> Result<Self> {
         let path = Self::config_path()?;
-        if path.exists() {
+        let mut config = if path.exists() {
             let contents = std::fs::read_to_string(&path)
                 .with_context(|| format!("Failed to read config at {}", path.display()))?;
-            toml::from_str(&contents).context("Failed to parse config.toml")
+            toml::from_str(&contents).context("Failed to parse config.toml")?
         } else {
-            Ok(Self::default())
-        }
+            Self::default()
+        };
+
+        // Resolve embedding_dim from model registry
+        let dim = crate::embed::models::get_model(&config.embedding_model)
+            .map(|m| m.dim)
+            .unwrap_or(384);
+        config.embedding_dim = dim;
+
+        Ok(config)
     }
 
     pub fn save(&self) -> Result<()> {
@@ -307,6 +326,8 @@ impl Default for Config {
         Self {
             port: default_port(),
             tier: Tier::Free,
+            embedding_model: default_embedding_model(),
+            embedding_dim: 384, // Will be updated by load()
             cloud_url: default_cloud_url(),
             api_key: None,
             device_id: None,
