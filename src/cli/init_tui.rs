@@ -83,9 +83,9 @@ enum Interaction {
         items: Vec<String>,
         cursor: usize,
     },
-    Confirm {
+    YesNo {
         prompt: String,
-        default: bool,
+        selected: bool, // true = Yes, false = No
     },
     TextInput {
         prompt: String,
@@ -103,12 +103,13 @@ enum FlowState {
     RunSetup,
     // Model
     CheckModel,
-    DownloadingModel,
+    SelectModel,
+    DownloadingSelectedModel,
     // Tools
     DetectingTools,
     SelectingTools,
     InstallingTools,
-    SelectOverwrites,
+    ConfirmOverwrite,
     AskRules,
     InstallingRules,
     OpenClawMenu,
@@ -116,9 +117,6 @@ enum FlowState {
     OpenClawIntegration,
     AskOpenClawMigrate,
     RunOpenClawMigrate,
-    // Model
-    SelectModel,
-    DownloadingSelectedModel,
     // Daemon
     DaemonMenu,
     InstallingService,
@@ -131,6 +129,8 @@ enum FlowState {
     // Done
     ShowSummary,
     Finished,
+    // Error recovery
+    RetryOpenClawPlugin,
 }
 
 enum AsyncMsg {
@@ -165,7 +165,7 @@ struct App {
     remote_url: String,
     tools_installed: Vec<String>,
     pending_overwrites: Vec<(usize, PathBuf)>,
-    install_queue: Vec<usize>,
+    current_overwrite_idx: usize,
     service_installed: bool,
     service_running: bool,
     openclaw_menu_choice: usize,
@@ -194,11 +194,16 @@ impl App {
             remote_url: String::new(),
             tools_installed: Vec::new(),
             pending_overwrites: Vec::new(),
-            install_queue: Vec::new(),
+            current_overwrite_idx: 0,
             service_installed: false,
             service_running: false,
             openclaw_menu_choice: 0,
         }
+    }
+
+    /// Clear all log lines (fresh screen for new section)
+    fn clear_lines(&mut self) {
+        self.lines.clear();
     }
 
     fn complete_step(&mut self) {
@@ -207,7 +212,6 @@ impl App {
         if self.current_step < 6 {
             self.steps[self.current_step] = StepStatus::Active;
         }
-        self.lines.push(LogLine::blank());
     }
 
     fn skip_step(&mut self) {
@@ -266,7 +270,9 @@ impl App {
 
     fn check_model(&mut self) {
         use crate::embed::models::MODELS;
-        
+
+        self.clear_lines();
+
         let model_ok = crate::embed::Embedder::model_path()
             .ok()
             .map(|p| p.exists() && std::fs::metadata(&p).map(|m| m.len() > 1_000_000).unwrap_or(false))
@@ -279,13 +285,13 @@ impl App {
         } else {
             self.lines.push(LogLine::info("No embedding model installed"));
         }
-        
-        // Always let user pick a model
+        self.lines.push(LogLine::blank());
+
         let items: Vec<String> = MODELS.iter().map(|m| {
             let current_marker = if m.id == self.cfg.embedding_model && model_ok { " ✓" } else { "" };
             format!("{} — {}d, ~{}MB{}", m.name, m.dim, m.size_mb, current_marker)
         }).collect();
-        
+
         self.interaction = Interaction::Menu {
             title: "Choose an embedding model:".into(),
             items,
@@ -295,6 +301,7 @@ impl App {
     }
 
     fn detect_tools(&mut self) {
+        self.clear_lines();
         self.lines.push(LogLine::header("Scanning for AI tools..."));
         self.lines.push(LogLine::blank());
 
@@ -308,7 +315,6 @@ impl App {
             self.flow = FlowState::DaemonMenu;
             self.advance();
         } else {
-            // Show detected agents with config path info
             for agent in &self.detected_agents {
                 let path_info = agent.config_path.as_ref()
                     .map(|p| format!(" ({})", p.display()))
@@ -317,7 +323,7 @@ impl App {
                 self.lines.push(LogLine::ok(format!("Found {}{}", agent.def.name, path_info)));
             }
             self.lines.push(LogLine::blank());
-            
+
             let items: Vec<(String, bool)> = self.detected_agents
                 .iter()
                 .map(|a| (a.def.name.to_string(), true))
@@ -329,17 +335,25 @@ impl App {
 
     fn install_tools(&mut self) {
         self.interaction = Interaction::None;
+        self.clear_lines();
+        self.lines.push(LogLine::header("Configuring tools..."));
+        self.lines.push(LogLine::blank());
+
         let url = init::mcp_sse_url(&self.cfg);
 
-        // Collect tools that need overwrite confirmation before installing
+        // Collect tools that need overwrite confirmation
         self.pending_overwrites.clear();
-        self.install_queue.clear();
+        self.current_overwrite_idx = 0;
 
         for &idx in &self.selected_tools.clone() {
             let agent = &self.detected_agents[idx];
             let name = agent.def.name;
 
-            // Sub-section header per agent
+            // Skip OpenClaw — it uses plugin/skills, not MCP
+            if name == "OpenClaw" {
+                continue;
+            }
+
             self.lines.push(LogLine::header(format!("─ {name}")));
 
             // Try CLI install
@@ -388,7 +402,6 @@ impl App {
                 };
 
                 if needs_overwrite {
-                    self.lines.push(LogLine::info("Existing config found — will ask to overwrite"));
                     self.pending_overwrites.push((idx, config_path));
                 } else {
                     let mcp_entry = init::sse_mcp_json(&self.cfg);
@@ -412,43 +425,77 @@ impl App {
             self.lines.push(LogLine::blank());
         }
 
-        // If there are overwrite prompts, show batch selection
+        // If there are overwrite prompts, show them one at a time
         if !self.pending_overwrites.is_empty() {
-            self.show_overwrite_selection();
+            self.current_overwrite_idx = 0;
+            self.show_next_overwrite();
             return;
         }
 
         self.finish_tool_install();
     }
 
-    fn show_overwrite_selection(&mut self) {
-        if self.pending_overwrites.is_empty() {
+    fn show_next_overwrite(&mut self) {
+        if self.current_overwrite_idx >= self.pending_overwrites.len() {
             self.finish_tool_install();
             return;
         }
 
+        let (idx, ref path) = self.pending_overwrites[self.current_overwrite_idx];
+        let name = self.detected_agents[idx].def.name;
+        let path_display = path.display().to_string();
+
+        // Clear and show fresh screen for this overwrite prompt
+        self.clear_lines();
+        self.lines.push(LogLine::header("Existing Configuration Found"));
         self.lines.push(LogLine::blank());
-        self.lines.push(LogLine::header("Existing configurations found"));
-        self.lines.push(LogLine::info("Deselect any you want to keep unchanged:"));
+        self.lines.push(LogLine::plain(format!("Agent: {name}")));
+        self.lines.push(LogLine::plain(format!("Path:  {}", path_display)));
+        self.lines.push(LogLine::blank());
+        self.lines.push(LogLine::info("ctxovrflw is already configured for this agent."));
+        self.lines.push(LogLine::blank());
 
-        let items: Vec<(String, bool)> = self.pending_overwrites
-            .iter()
-            .map(|(idx, path)| {
-                let name = self.detected_agents[*idx].def.name;
-                (format!("{name} → {}", path.display()), true)
-            })
-            .collect();
+        self.interaction = Interaction::YesNo {
+            prompt: format!("Overwrite {name} config?"),
+            selected: true,
+        };
+        self.flow = FlowState::ConfirmOverwrite;
+    }
 
-        self.interaction = Interaction::Checkbox { items, cursor: 0 };
-        self.flow = FlowState::SelectOverwrites;
+    fn handle_overwrite_response(&mut self, overwrite: bool) {
+        let (idx, config_path) = self.pending_overwrites[self.current_overwrite_idx].clone();
+        let name = self.detected_agents[idx].def.name;
+
+        if overwrite {
+            let mcp_entry = init::sse_mcp_json(&self.cfg);
+            match write_mcp_config_quiet(&config_path, &mcp_entry) {
+                Ok(_) => {
+                    self.tools_installed.push(name.to_string());
+                }
+                Err(_) => {}
+            }
+        }
+
+        self.current_overwrite_idx += 1;
+        self.show_next_overwrite();
     }
 
     fn finish_tool_install(&mut self) {
-        let url = init::mcp_sse_url(&self.cfg);
-        self.lines.push(LogLine::blank());
-        self.lines.push(LogLine::info(format!("Tools connect via {url}")));
+        self.clear_lines();
 
-        // Check if we have rules-capable agents
+        if !self.tools_installed.is_empty() {
+            self.lines.push(LogLine::header("Tools configured:"));
+            for name in &self.tools_installed {
+                self.lines.push(LogLine::ok(name.clone()));
+            }
+            self.lines.push(LogLine::blank());
+        }
+
+        let url = init::mcp_sse_url(&self.cfg);
+        self.lines.push(LogLine::info(format!("Tools connect via {url}")));
+        self.lines.push(LogLine::blank());
+
+        // Check if we have rules-capable agents (non-OpenClaw)
         self.has_rules_agents = self.selected_tools.iter().any(|&idx| {
             let a = &self.detected_agents[idx];
             a.def.global_rules_path.is_some() && a.def.name != "OpenClaw"
@@ -472,7 +519,6 @@ impl App {
     }
 
     fn ask_rules(&mut self) {
-        self.lines.push(LogLine::blank());
         let agents_with_rules: Vec<String> = self.selected_tools.iter()
             .filter_map(|&idx| {
                 let a = &self.detected_agents[idx];
@@ -489,11 +535,11 @@ impl App {
         }
         self.lines.push(LogLine::blank());
 
-        self.interaction = Interaction::Confirm {
+        self.interaction = Interaction::YesNo {
             prompt: "Install agent rules? (teaches agents to use ctxovrflw)".into(),
-            default: true,
+            selected: true,
         };
-        self.flow = FlowState::AskRules; // stay here until confirm
+        self.flow = FlowState::AskRules;
     }
 
     fn install_rules(&mut self) {
@@ -524,8 +570,10 @@ impl App {
     }
 
     fn run_openclaw_integration(&mut self) {
-        self.lines.push(LogLine::blank());
+        self.clear_lines();
         self.lines.push(LogLine::header("🐾 OpenClaw Integration"));
+        self.lines.push(LogLine::blank());
+        self.lines.push(LogLine::info("OpenClaw uses a plugin (not MCP) for ctxovrflw integration."));
         self.lines.push(LogLine::blank());
 
         self.interaction = Interaction::Menu {
@@ -542,8 +590,12 @@ impl App {
     }
 
     fn run_openclaw_plugin_install(&mut self) {
+        self.clear_lines();
+        self.lines.push(LogLine::header("🐾 OpenClaw Plugin"));
+        self.lines.push(LogLine::blank());
+
         self.interaction = Interaction::Spinner {
-            message: "Installing OpenClaw plugin...".into(),
+            message: "Installing @ctxovrflw/memory-ctxovrflw...".into(),
         };
         self.flow = FlowState::InstallingOpenClawPlugin;
 
@@ -595,10 +647,14 @@ impl App {
     }
 
     fn finish_openclaw_integration(&mut self) {
+        self.clear_lines();
+        self.lines.push(LogLine::header("🐾 OpenClaw Integration"));
+        self.lines.push(LogLine::blank());
+
         // Check for workspace files to migrate
         let home = dirs::home_dir().unwrap_or_default();
         let workspace = home.join(".openclaw/workspace");
-        
+
         let files_to_check = ["IDENTITY.md", "SOUL.md", "USER.md", "AGENTS.md", "MEMORY.md"];
         let mut found: Vec<String> = Vec::new();
         for name in &files_to_check {
@@ -619,9 +675,9 @@ impl App {
                 self.lines.push(LogLine::info(f.clone()));
             }
             self.lines.push(LogLine::blank());
-            self.interaction = Interaction::Confirm {
+            self.interaction = Interaction::YesNo {
                 prompt: "Migrate workspace files into ctxovrflw memories?".into(),
-                default: true,
+                selected: true,
             };
             self.flow = FlowState::AskOpenClawMigrate;
             return;
@@ -634,6 +690,8 @@ impl App {
     }
 
     fn show_daemon_menu(&mut self) {
+        self.clear_lines();
+
         self.service_installed = crate::daemon::is_service_installed();
         self.service_running = crate::daemon::is_service_running();
 
@@ -655,9 +713,9 @@ impl App {
                 self.flow = FlowState::AskCloud;
                 self.advance();
             } else {
-                self.interaction = Interaction::Confirm {
+                self.interaction = Interaction::YesNo {
                     prompt: "Daemon stopped — start it?".into(),
-                    default: true,
+                    selected: true,
                 };
                 self.flow = FlowState::AskStartService;
             }
@@ -681,6 +739,8 @@ impl App {
     }
 
     fn ask_cloud(&mut self) {
+        self.clear_lines();
+
         if self.cfg.is_logged_in() {
             self.lines.push(LogLine::ok(format!(
                 "Cloud sync configured ({})",
@@ -696,15 +756,16 @@ impl App {
         self.lines.push(LogLine::info("Sync memories across devices with end-to-end encryption."));
         self.lines.push(LogLine::blank());
 
-        self.interaction = Interaction::Confirm {
+        self.interaction = Interaction::YesNo {
             prompt: "Enable cloud sync?".into(),
-            default: true,
+            selected: true,
         };
     }
 
     fn show_summary(&mut self) {
+        self.clear_lines();
         self.interaction = Interaction::None;
-        self.lines.push(LogLine::blank());
+
         self.lines.push(LogLine { spans: vec![
             ("  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━".into(),
              Style::default().fg(Color::DarkGray)),
@@ -753,53 +814,20 @@ impl App {
                         items[*cursor].1 = !items[*cursor].1;
                     }
                     KeyCode::Enter => {
-                        match self.flow {
-                            FlowState::SelectOverwrites => {
-                                // Process batch overwrite selections
-                                let selections: Vec<bool> = items.iter().map(|(_, sel)| *sel).collect();
-                                let mcp_entry = init::sse_mcp_json(&self.cfg);
-                                let overwrites = self.pending_overwrites.clone();
-                                self.interaction = Interaction::None;
+                        // Tool selection (SelectingTools)
+                        self.selected_tools = items.iter().enumerate()
+                            .filter(|(_, (_, sel))| *sel)
+                            .map(|(i, _)| i)
+                            .collect();
 
-                                for (i, (idx, config_path)) in overwrites.iter().enumerate() {
-                                    let name = self.detected_agents[*idx].def.name;
-                                    if selections[i] {
-                                        match write_mcp_config_quiet(config_path, &mcp_entry) {
-                                            Ok(_) => {
-                                                self.lines.push(LogLine::ok(format!(
-                                                    "{name} → {} (overwritten)", config_path.display()
-                                                )));
-                                                self.tools_installed.push(name.to_string());
-                                            }
-                                            Err(e) => self.lines.push(LogLine::err(format!("{name}: {e}"))),
-                                        }
-                                    } else {
-                                        self.lines.push(LogLine::info(format!("{name} — kept existing")));
-                                    }
-                                }
-                                self.pending_overwrites.clear();
-                                self.finish_tool_install();
-                            }
-                            _ => {
-                                // Tool selection (SelectingTools)
-                                self.selected_tools = items.iter().enumerate()
-                                    .filter(|(_, (_, sel))| *sel)
-                                    .map(|(i, _)| i)
-                                    .collect();
-
-                                if self.selected_tools.is_empty() {
-                                    self.lines.push(LogLine::info("No tools selected"));
-                                    self.complete_step();
-                                    self.flow = FlowState::DaemonMenu;
-                                    self.advance();
-                                } else {
-                                    self.lines.push(LogLine::blank());
-                                    self.lines.push(LogLine::header("Configuring tools..."));
-                                    self.lines.push(LogLine::blank());
-                                    self.flow = FlowState::InstallingTools;
-                                    self.advance();
-                                }
-                            }
+                        if self.selected_tools.is_empty() {
+                            self.lines.push(LogLine::info("No tools selected"));
+                            self.complete_step();
+                            self.flow = FlowState::DaemonMenu;
+                            self.advance();
+                        } else {
+                            self.flow = FlowState::InstallingTools;
+                            self.advance();
                         }
                     }
                     _ => {}
@@ -822,21 +850,21 @@ impl App {
                             FlowState::SelectModel => {
                                 use crate::embed::models::MODELS;
                                 let model = &MODELS[choice];
-                                
-                                // Check if this model is already installed and current
+
                                 let already_installed = model.id == self.cfg.embedding_model && {
                                     crate::embed::Embedder::model_path()
                                         .ok()
                                         .map(|p| p.exists() && std::fs::metadata(&p).map(|m| m.len() > 1_000_000).unwrap_or(false))
                                         .unwrap_or(false)
                                 };
-                                
+
                                 if already_installed {
                                     self.lines.push(LogLine::ok(format!("Keeping current model: {}", model.name)));
                                     self.complete_step();
                                     self.flow = FlowState::DetectingTools;
                                     self.advance();
                                 } else {
+                                    self.clear_lines();
                                     self.lines.push(LogLine::info(format!(
                                         "Downloading {} (~{}MB)...", model.name, model.size_mb
                                     )));
@@ -844,7 +872,7 @@ impl App {
                                         message: format!("Downloading {}...", model.name),
                                     };
                                     self.flow = FlowState::DownloadingSelectedModel;
-                                    
+
                                     let model_id = model.id.to_string();
                                     let model_dim = model.dim;
                                     let onnx_url = model.onnx_url.to_string();
@@ -863,7 +891,11 @@ impl App {
                                 match choice {
                                     0 => {
                                         // Plugin + Skill + Agent Rules
+                                        self.clear_lines();
+                                        self.lines.push(LogLine::header("🐾 OpenClaw Integration"));
+                                        self.lines.push(LogLine::blank());
                                         self.run_openclaw_skill_and_rules();
+                                        self.lines.push(LogLine::blank());
                                         self.run_openclaw_plugin_install();
                                     }
                                     1 => {
@@ -872,6 +904,9 @@ impl App {
                                     }
                                     2 => {
                                         // Skill + Agent Rules only
+                                        self.clear_lines();
+                                        self.lines.push(LogLine::header("🐾 OpenClaw Integration"));
+                                        self.lines.push(LogLine::blank());
                                         self.run_openclaw_skill_and_rules();
                                         self.finish_openclaw_integration();
                                     }
@@ -887,14 +922,13 @@ impl App {
                             FlowState::DaemonMenu => {
                                 match choice {
                                     0 => {
-                                        // Install service
                                         match crate::daemon::service_install() {
                                             Ok(_) => {
                                                 self.lines.push(LogLine::ok("Service installed"));
                                                 self.service_installed = true;
-                                                self.interaction = Interaction::Confirm {
+                                                self.interaction = Interaction::YesNo {
                                                     prompt: "Start the daemon now?".into(),
-                                                    default: true,
+                                                    selected: true,
                                                 };
                                                 self.flow = FlowState::AskStartService;
                                             }
@@ -907,7 +941,6 @@ impl App {
                                         }
                                     }
                                     1 => {
-                                        // Remote daemon
                                         self.lines.push(LogLine::info("Enter the URL of the remote daemon"));
                                         self.interaction = Interaction::TextInput {
                                             prompt: "Remote daemon URL".into(),
@@ -916,7 +949,6 @@ impl App {
                                         self.flow = FlowState::EnterRemoteUrl;
                                     }
                                     _ => {
-                                        // Skip
                                         self.lines.push(LogLine::info("Skipped. Run later: ctxovrflw init"));
                                         self.skip_step();
                                         self.flow = FlowState::AskCloud;
@@ -931,19 +963,15 @@ impl App {
                 }
             }
 
-            Interaction::Confirm { default, .. } => {
+            Interaction::YesNo { selected, .. } => {
                 match key.code {
-                    KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter if *default => {
-                        self.on_confirm(true).await?;
+                    KeyCode::Left | KeyCode::Right | KeyCode::Char('h') | KeyCode::Char('l') |
+                    KeyCode::Tab => {
+                        *selected = !*selected;
                     }
-                    KeyCode::Enter if !*default => {
-                        self.on_confirm(false).await?;
-                    }
-                    KeyCode::Char('n') | KeyCode::Char('N') => {
-                        self.on_confirm(false).await?;
-                    }
-                    KeyCode::Char('y') | KeyCode::Char('Y') => {
-                        self.on_confirm(true).await?;
+                    KeyCode::Enter => {
+                        let yes = *selected;
+                        self.on_yesno(yes).await?;
                     }
                     _ => {}
                 }
@@ -972,7 +1000,6 @@ impl App {
             }
 
             Interaction::Spinner { .. } | Interaction::None => {
-                // q to quit during spinner
                 if key.code == KeyCode::Char('q') || key.code == KeyCode::Esc {
                     self.should_quit = true;
                 }
@@ -982,10 +1009,13 @@ impl App {
         Ok(())
     }
 
-    async fn on_confirm(&mut self, yes: bool) -> Result<()> {
+    async fn on_yesno(&mut self, yes: bool) -> Result<()> {
         self.interaction = Interaction::None;
 
         match self.flow {
+            FlowState::ConfirmOverwrite => {
+                self.handle_overwrite_response(yes);
+            }
             FlowState::AskRules => {
                 if yes {
                     self.flow = FlowState::InstallingRules;
@@ -1013,7 +1043,6 @@ impl App {
                             self.interaction = Interaction::None;
                             self.lines.push(LogLine::ok(format!("Migrated {count} memories from workspace files")));
 
-                            // Backup and rewrite MEMORY.md if it exists
                             let home = dirs::home_dir().unwrap_or_default();
                             let memory_md = home.join(".openclaw/workspace/MEMORY.md");
                             if memory_md.exists() {
@@ -1070,6 +1099,14 @@ impl App {
                 self.flow = FlowState::ShowSummary;
                 self.advance();
             }
+            FlowState::RetryOpenClawPlugin => {
+                if yes {
+                    self.run_openclaw_plugin_install();
+                } else {
+                    self.lines.push(LogLine::info("Skipped plugin install"));
+                    self.finish_openclaw_integration();
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -1108,9 +1145,9 @@ impl App {
             match msg {
                 AsyncMsg::ModelDownloaded(result) => {
                     self.interaction = Interaction::None;
+                    self.clear_lines();
                     match result {
                         Ok(_) => {
-                            // Reload config to pick up model change
                             self.cfg = Config::load().unwrap_or_default();
                             let name = crate::embed::models::get_model(&self.cfg.embedding_model)
                                 .map(|m| m.name).unwrap_or("model");
@@ -1124,19 +1161,30 @@ impl App {
                 }
                 AsyncMsg::OpenClawPluginInstalled(result) => {
                     self.interaction = Interaction::None;
+                    self.clear_lines();
+                    self.lines.push(LogLine::header("🐾 OpenClaw Plugin"));
+                    self.lines.push(LogLine::blank());
                     match result {
                         Ok(_) => {
-                            self.lines.push(LogLine::ok("OpenClaw plugin installed"));
+                            self.lines.push(LogLine::ok("Plugin installed successfully"));
                             self.lines.push(LogLine::ok("Gateway restarted"));
+                            self.lines.push(LogLine::blank());
+                            self.finish_openclaw_integration();
                         }
                         Err(e) => {
-                            self.lines.push(LogLine::err(format!("Plugin install: {e}")));
+                            self.lines.push(LogLine::err(format!("{e}")));
+                            self.lines.push(LogLine::blank());
                             self.lines.push(LogLine::info(
-                                "Run manually: openclaw plugins install @ctxovrflw/memory-ctxovrflw && openclaw gateway restart"
+                                "Manual: openclaw plugins install @ctxovrflw/memory-ctxovrflw"
                             ));
+                            self.lines.push(LogLine::blank());
+                            self.interaction = Interaction::YesNo {
+                                prompt: "Try again?".into(),
+                                selected: true,
+                            };
+                            self.flow = FlowState::RetryOpenClawPlugin;
                         }
                     }
-                    self.finish_openclaw_integration();
                 }
                 AsyncMsg::ConnectResult(result) => {
                     self.interaction = Interaction::None;
@@ -1319,11 +1367,38 @@ fn render_content(f: &mut Frame, app: &App, area: Rect) {
             ]));
         }
 
-        Interaction::Confirm { prompt, default } => {
-            let hint = if *default { "[Y/n]" } else { "[y/N]" };
+        Interaction::YesNo { prompt, selected } => {
+            all_lines.push(Line::from(""));
+            all_lines.push(Line::from(Span::styled(
+                format!("  {prompt}"),
+                Style::default().bold(),
+            )));
+            all_lines.push(Line::from(""));
+
+            let yes_style = if *selected {
+                Style::default().fg(Color::Black).bg(Color::Green).bold()
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            let no_style = if !*selected {
+                Style::default().fg(Color::Black).bg(Color::Red).bold()
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
             all_lines.push(Line::from(vec![
-                Span::styled(format!("  {prompt} "), Style::default()),
-                Span::styled(hint, Style::default().fg(Color::Cyan).bold()),
+                Span::raw("    "),
+                Span::styled(" Yes ", yes_style),
+                Span::raw("   "),
+                Span::styled(" No ", no_style),
+            ]));
+
+            all_lines.push(Line::from(""));
+            all_lines.push(Line::from(vec![
+                Span::styled("  ←→", Style::default().fg(Color::DarkGray)),
+                Span::raw(" select  "),
+                Span::styled("Enter", Style::default().fg(Color::DarkGray)),
+                Span::raw(" confirm"),
             ]));
         }
 
@@ -1406,15 +1481,15 @@ async fn download_model_quiet(
     tokenizer_url: &str,
 ) -> Result<()> {
     use crate::embed::set_embedding_dim;
-    
+
     let model_dir = Config::model_dir()?;
     let model_subdir = model_dir.join(model_id);
     std::fs::create_dir_all(&model_subdir)?;
-    
+
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::limited(10))
         .build()?;
-    
+
     // Download ONNX model
     let model_file = model_subdir.join("model.onnx");
     if !model_file.exists() {
@@ -1428,7 +1503,7 @@ async fn download_model_quiet(
         }
         std::fs::write(&model_file, &bytes)?;
     }
-    
+
     // Download tokenizer
     let tokenizer_file = model_subdir.join("tokenizer.json");
     if !tokenizer_file.exists() {
@@ -1439,20 +1514,19 @@ async fn download_model_quiet(
         let bytes = resp.bytes().await?;
         std::fs::write(&tokenizer_file, &bytes)?;
     }
-    
+
     // Update config
     let mut cfg = Config::load().unwrap_or_default();
     cfg.embedding_model = model_id.to_string();
     cfg.embedding_dim = model_dim;
     cfg.save()?;
-    
+
     // Set runtime dimension for db::open
     set_embedding_dim(model_dim);
-    
+
     // If there's an existing database, we need to recreate it
     let db_path = Config::db_path()?;
     if db_path.exists() {
-        // Export, nuke, reimport, re-embed
         let conn = crate::db::open()?;
         let mut stmt = conn.prepare(
             "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at, deleted, synced_at FROM memories ORDER BY created_at"
@@ -1466,38 +1540,36 @@ async fn download_model_quiet(
         })?.collect::<std::result::Result<Vec<_>, _>>()?;
         drop(stmt);
         drop(conn);
-        
+
         // Nuke and recreate
         std::fs::remove_file(&db_path)?;
         let conn = crate::db::open()?;
-        
-        // Re-import
+
         for row in &rows {
             conn.execute(
                 "INSERT INTO memories (id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at, deleted, synced_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
                 rusqlite::params![row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9, row.10, row.11],
             )?;
         }
-        
+
         // Re-embed
         let embedder_arc = crate::embed::get_or_init()?;
         let mut embedder = embedder_arc.lock().unwrap_or_else(|e| e.into_inner());
         for row in &rows {
-            if row.10 != 0 { continue; } // skip deleted
+            if row.10 != 0 { continue; }
             let embedding = embedder.embed(&row.1)?;
             let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
             conn.execute("UPDATE memories SET embedding = ?1 WHERE id = ?2", rusqlite::params![bytes, row.0])?;
             conn.execute("INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)", rusqlite::params![row.0, bytes])?;
         }
     }
-    
+
     Ok(())
 }
 
 // ── Entry Point ─────────────────────────────────────────────
 
 pub async fn run(cfg: &Config) -> Result<()> {
-    // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -1505,13 +1577,10 @@ pub async fn run(cfg: &Config) -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(cfg.clone());
-
-    // Kick off the state machine
     app.advance();
 
     let result = run_loop(&mut terminal, &mut app).await;
 
-    // Restore terminal
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -1526,14 +1595,10 @@ async fn run_loop(
     loop {
         terminal.draw(|f| ui(f, app))?;
 
-        // Poll async tasks
         app.poll_async();
 
-        // Poll for keyboard events (50ms timeout for smooth animation)
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
-                // On Windows, crossterm fires Press + Release (and Repeat) events.
-                // Only handle Press to avoid double-processing.
                 if key.kind == KeyEventKind::Press {
                     app.handle_key(key).await?;
                 }
