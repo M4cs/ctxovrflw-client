@@ -21,6 +21,8 @@ use std::io;
 
 use crate::config::Config;
 use crate::db;
+#[cfg(feature = "pro")]
+use crate::db::graph;
 
 // ── Data ────────────────────────────────────────────────────────────────
 
@@ -75,6 +77,7 @@ enum Mode {
     Search,
     ConfirmDelete,
     Syncing,
+    Graph,
 }
 
 struct App {
@@ -92,6 +95,10 @@ struct App {
     synced_count: usize,
     unsynced_count: usize,
     modified_count: usize,
+    graph_entity_name: String,
+    graph_entity_type: String,
+    graph_relations: Vec<(String, String, String, String, f64, bool)>,
+    graph_selected: usize,
 }
 
 impl App {
@@ -124,6 +131,10 @@ impl App {
             synced_count,
             unsynced_count,
             modified_count,
+            graph_entity_name: String::new(),
+            graph_entity_type: String::new(),
+            graph_relations: Vec::new(),
+            graph_selected: 0,
         }
     }
 
@@ -303,6 +314,7 @@ fn run_loop(
                     Mode::Detail => handle_detail_key(app, key),
                     Mode::Search => handle_search_key(app, key),
                     Mode::ConfirmDelete => handle_delete_key(app, key, conn)?,
+                    Mode::Graph => handle_graph_key(app, key),
                     Mode::Syncing => {} // non-interactive, will transition back
                 }
             }
@@ -322,8 +334,52 @@ fn handle_list_key(app: &mut App, key: KeyEvent, conn: &Connection, cfg: &Config
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => app.should_quit = true,
         KeyCode::Up | KeyCode::Char('k') => app.move_up(),
         KeyCode::Down | KeyCode::Char('j') => app.move_down(),
-        KeyCode::Home | KeyCode::Char('g') => {
+        KeyCode::Home => {
             if !app.filtered.is_empty() { app.table_state.select(Some(0)); }
+        }
+        KeyCode::Char('g') => {
+            #[cfg(feature = "pro")]
+            {
+                if let Some(mem) = app.selected_memory() {
+                    if let Some(subject) = mem.subject.clone() {
+                        match graph::find_entity(conn, &subject, None) {
+                            Ok(entities) if !entities.is_empty() => {
+                                let entity = &entities[0];
+                                app.graph_entity_name = entity.name.clone();
+                                app.graph_entity_type = entity.entity_type.clone();
+                                app.graph_relations.clear();
+                                app.graph_selected = 0;
+                                if let Ok(rels) = graph::get_relations(conn, &entity.id, None, None) {
+                                    for (rel, source, target) in &rels {
+                                        let is_outgoing = rel.source_id == entity.id;
+                                        if is_outgoing {
+                                            app.graph_relations.push((
+                                                source.name.clone(), source.entity_type.clone(),
+                                                rel.relation_type.clone(), target.name.clone(),
+                                                rel.confidence, true,
+                                            ));
+                                        } else {
+                                            app.graph_relations.push((
+                                                source.name.clone(), source.entity_type.clone(),
+                                                rel.relation_type.clone(), target.name.clone(),
+                                                rel.confidence, false,
+                                            ));
+                                        }
+                                    }
+                                }
+                                app.mode = Mode::Graph;
+                            }
+                            _ => { app.status_msg = Some("No graph data for this memory".into()); }
+                        }
+                    } else {
+                        app.status_msg = Some("No graph data for this memory".into());
+                    }
+                }
+            }
+            #[cfg(not(feature = "pro"))]
+            {
+                app.status_msg = Some("Graph view requires Pro tier".into());
+            }
         }
         KeyCode::End | KeyCode::Char('G') => {
             if !app.filtered.is_empty() { app.table_state.select(Some(app.filtered.len() - 1)); }
@@ -475,6 +531,21 @@ fn handle_delete_key(app: &mut App, key: KeyEvent, conn: &Connection) -> Result<
     Ok(())
 }
 
+fn handle_graph_key(app: &mut App, key: KeyEvent) {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('q') => app.mode = Mode::List,
+        KeyCode::Up | KeyCode::Char('k') => {
+            if app.graph_selected > 0 { app.graph_selected -= 1; }
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if !app.graph_relations.is_empty() && app.graph_selected + 1 < app.graph_relations.len() {
+                app.graph_selected += 1;
+            }
+        }
+        _ => {}
+    }
+}
+
 // ── UI ──────────────────────────────────────────────────────────────────
 
 fn ui(f: &mut Frame, app: &mut App) {
@@ -498,7 +569,12 @@ fn ui(f: &mut Frame, app: &mut App) {
         render_detail(f, app, area);
     }
 
-    // Overlay for delete confirmation
+    if app.mode == Mode::Graph {
+        let area = centered_rect(70, 70, f.area());
+        f.render_widget(Clear, area);
+        render_graph(f, app, area);
+    }
+
     if app.mode == Mode::ConfirmDelete {
         let area = centered_rect(50, 20, f.area());
         f.render_widget(Clear, area);
@@ -665,6 +741,8 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             Span::raw(" search  "),
             Span::styled("s", Style::default().fg(Color::DarkGray)),
             Span::raw(" filter  "),
+            Span::styled("g", Style::default().fg(Color::DarkGray)),
+            Span::raw(" graph  "),
             Span::styled("d", Style::default().fg(Color::DarkGray)),
             Span::raw(" delete  "),
             Span::styled("S", Style::default().fg(Color::DarkGray)),
@@ -800,6 +878,64 @@ fn render_delete_confirm(f: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(Color::Red));
 
     f.render_widget(Paragraph::new(text).block(block), area);
+}
+
+fn render_graph(f: &mut Frame, app: &mut App, area: Rect) {
+    use ratatui::widgets::{List, ListItem, ListState};
+
+    let title = format!(" Entity: {} ({}) ", app.graph_entity_name, app.graph_entity_type);
+    let block = Block::default()
+        .title(Span::styled(title, Style::default().fg(Color::Cyan).bold()))
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan));
+
+    if app.graph_relations.is_empty() {
+        let text = Text::from(vec![
+            Line::from(""),
+            Line::from("  No relations found"),
+            Line::from(""),
+            Line::from(Span::styled("  Esc: back", Style::default().fg(Color::DarkGray))),
+        ]);
+        f.render_widget(Paragraph::new(text).block(block), area);
+        return;
+    }
+
+    let items: Vec<ListItem> = app.graph_relations.iter().map(|(_src_name, _src_type, rel_type, tgt_name, confidence, is_outgoing)| {
+        let (arrow, arrow_color, other_name) = if *is_outgoing {
+            ("→", Color::Green, tgt_name.as_str())
+        } else {
+            ("←", Color::Magenta, _src_name.as_str())
+        };
+        ListItem::new(Line::from(vec![
+            Span::styled(format!("  {arrow} "), Style::default().fg(arrow_color)),
+            Span::styled(format!("[{rel_type}]"), Style::default().fg(Color::Yellow)),
+            Span::raw(" "),
+            Span::styled(other_name, Style::default().fg(Color::White)),
+            Span::styled(format!("  conf: {confidence:.1}"), Style::default().fg(Color::DarkGray)),
+        ]))
+    }).collect();
+
+    let mut list_state = ListState::default();
+    list_state.select(Some(app.graph_selected));
+
+    let inner = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .split(block.inner(area));
+
+    f.render_widget(block, area);
+
+    let list = List::new(items)
+        .highlight_style(Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD));
+    f.render_stateful_widget(list, inner[0], &mut list_state);
+
+    let footer = Line::from(vec![
+        Span::styled("  Esc", Style::default().fg(Color::DarkGray)),
+        Span::raw(": back  "),
+        Span::styled("↑↓", Style::default().fg(Color::DarkGray)),
+        Span::raw(": navigate"),
+    ]);
+    f.render_widget(Paragraph::new(footer), inner[1]);
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

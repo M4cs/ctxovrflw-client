@@ -762,6 +762,41 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
         text.push_str(&line);
     }
 
+    // Graph context: enrich results with entity relationships
+    #[cfg(feature = "pro")]
+    if matches!(cfg.tier, Tier::Pro) {
+        let mut seen_entities: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut graph_lines: Vec<String> = Vec::new();
+        for (memory, _) in &results {
+            if let Some(subj) = &memory.subject {
+                let entity_name = if let Some((_t, n)) = subj.split_once(':') { n } else { subj.as_str() };
+                if seen_entities.contains(entity_name) { continue; }
+                seen_entities.insert(entity_name.to_string());
+                if let Ok(found) = db::graph::find_entity(&conn, entity_name, None) {
+                    if let Some(entity) = found.first() {
+                        if let Ok(rels) = db::graph::get_relations(&conn, &entity.id, None, None) {
+                            let rel_strs: Vec<String> = rels.iter().take(3).map(|(r, _s, t)| {
+                                format!("{} ({})", t.name, r.relation_type)
+                            }).collect();
+                            if !rel_strs.is_empty() {
+                                graph_lines.push(format!(
+                                    "'{}' ({}): connected to {}",
+                                    entity.name, entity.entity_type, rel_strs.join(", ")
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if !graph_lines.is_empty() {
+            text.push_str("\n--- Graph Context ---\n");
+            for line in &graph_lines {
+                text.push_str(&format!("{}\n", line));
+            }
+        }
+    }
+
     Ok(json!({
         "content": [{ "type": "text", "text": text }]
     }))
@@ -1303,8 +1338,37 @@ async fn handle_traverse(args: &Value) -> Result<Value> {
         ));
     }
 
+    // Build structured JSON for programmatic use
+    let json_nodes: Vec<Value> = nodes.iter().map(|n| {
+        let incoming = if let Some(edge) = n.path.last() {
+            json!({
+                "type": edge.relation_type,
+                "from": edge.from_entity,
+                "confidence": edge.confidence,
+            })
+        } else {
+            Value::Null
+        };
+        json!({
+            "name": n.entity.name,
+            "type": n.entity.entity_type,
+            "id": n.entity.id,
+            "depth": n.depth,
+            "incoming_relation": incoming,
+        })
+    }).collect();
+
+    let structured = json!({
+        "nodes": json_nodes,
+        "total": nodes.len(),
+        "max_depth": max_depth,
+    });
+
     Ok(json!({
-        "content": [{ "type": "text", "text": text }]
+        "content": [
+            { "type": "text", "text": text },
+            { "type": "text", "text": structured.to_string() }
+        ]
     }))
 }
 
