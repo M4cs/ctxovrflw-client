@@ -21,12 +21,10 @@ Replace OpenClaw's built-in memory with **ctxovrflw** — a local-first, privacy
 ## Install
 
 ```bash
-# From npm (when published)
-openclaw plugins install @ctxovrflw/openclaw-plugin
-
-# From local path (development)
-openclaw plugins install ./path/to/openclaw-plugin
+openclaw plugins install @ctxovrflw/memory-ctxovrflw
 ```
+
+> **Tip:** `ctxovrflw init` detects OpenClaw automatically and offers to install the plugin, skill, and agent rules for you via an interactive TUI.
 
 ## Configure
 

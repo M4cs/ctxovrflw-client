@@ -18,8 +18,9 @@ compatibility: Requires ctxovrflw daemon running locally (MCP server on port 743
 You have access to **ctxovrflw**, a shared memory layer that persists across sessions and is
 accessible by every AI tool the user runs (Cursor, Claude Code, Cline, Windsurf, etc.).
 
-You interact with it via the MCP tools: `remember`, `recall`, `forget`, `status`, `consolidate`,
-`add_entity`, `add_relation`, `traverse`, `get_relations`, `subjects`, and `manage_webhooks`.
+You interact with it via the MCP tools: `remember`, `recall`, `update_memory`, `forget`, `status`,
+`consolidate`, `add_entity`, `add_relation`, `traverse`, `get_relations`, `search_entities`,
+`subjects`, and `manage_webhooks`.
 
 ## ⚠️ Prerequisites — ctxovrflw Must Be Installed & Running
 
@@ -51,6 +52,24 @@ After install:
 ```bash
 ctxovrflw init -y  # Non-interactive setup — auto-configures everything, starts daemon
 ctxovrflw login    # Authenticate with cloud (optional, needed for sync)
+```
+
+### Usage via CLI
+
+Beyond MCP tools, ctxovrflw provides a full CLI:
+
+```bash
+ctxovrflw memories          # Interactive memory browser (TUI)
+ctxovrflw model             # Embedding model manager (TUI) — 12 models available
+ctxovrflw model list        # List available models
+ctxovrflw model current     # Show active model
+ctxovrflw model switch <n>  # Hotswap embedding model
+ctxovrflw graph build       # Build knowledge graph from memories (Pro)
+ctxovrflw graph stats       # Knowledge graph statistics (Pro)
+ctxovrflw remember "text"   # Store a memory from CLI
+ctxovrflw recall "query"    # Search memories from CLI
+ctxovrflw status            # Daemon status
+ctxovrflw update            # Self-update (SHA256 verified)
 ```
 
 The `-y` / `--yes` flag runs init non-interactively: creates config, downloads the model,

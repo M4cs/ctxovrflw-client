@@ -67,20 +67,35 @@ Any MCP-compatible agent works out of the box.
 | `update_memory` | Update content, tags, subject, or expiry on existing memories |
 | `forget` | Delete a memory (with dry-run preview) |
 | `subjects` | List all known entities and memory counts |
+| `consolidate` | Deduplicate and clean up memories for a subject (Pro) |
 | `context` | Synthesized context briefing (Pro) |
 | `status` | Check tier, usage, and feature availability |
+| `manage_webhooks` | Create, list, and delete webhook subscriptions |
+| **Knowledge Graph (Pro)** | |
+| `add_entity` | Add a named entity with type and metadata |
+| `add_relation` | Create a relationship between two entities |
+| `traverse` | Walk the graph from an entity up to N hops |
+| `get_relations` | Get direct relationships for an entity |
+| `search_entities` | Search entities by name, type, or metadata |
 
 ## CLI
 
 ```bash
-ctxovrflw init              # First-time setup
+ctxovrflw init              # First-time setup (interactive TUI)
 ctxovrflw start             # Start the daemon
 ctxovrflw status            # Check daemon status
 ctxovrflw remember "text"   # Store a memory
 ctxovrflw recall "query"    # Search memories
+ctxovrflw memories          # Interactive memory browser (TUI)
+ctxovrflw model             # Embedding model manager (TUI)
+ctxovrflw model list        # List available embedding models
+ctxovrflw model current     # Show active model
+ctxovrflw model switch <n>  # Switch embedding model (hotswap)
+ctxovrflw graph build       # Build knowledge graph from memories (Pro)
+ctxovrflw graph stats       # Knowledge graph statistics (Pro)
 ctxovrflw login             # Authenticate for cloud sync
 ctxovrflw account           # View cloud account status
-ctxovrflw update            # Self-update to latest version
+ctxovrflw update            # Self-update (with SHA256 verification)
 ctxovrflw version           # Check current version
 ```
 
@@ -91,14 +106,29 @@ ctxovrflw version           # Check current version
 ├── config.toml          # Configuration
 ├── memories.db          # SQLite database (memories + FTS5 + sqlite-vec)
 └── models/
-    ├── all-MiniLM-L6-v2-q8.onnx   # Embedding model (~23MB)
-    └── tokenizer.json
+    └── <model-name>/    # Per-model subdirectory
+        ├── model.onnx   # Quantized ONNX embedding model
+        └── tokenizer.json
 ```
 
 - **Storage:** SQLite with FTS5 (keyword search) and sqlite-vec (vector search)
-- **Embeddings:** ONNX Runtime with `all-MiniLM-L6-v2` quantized model, loaded dynamically
+- **Search:** Hybrid semantic + FTS5 keyword search with Reciprocal Rank Fusion (RRF)
+- **Embeddings:** ONNX Runtime with 12 available models — hotswap via `ctxovrflw model switch`
+  - Default: `all-MiniLM-L6-v2` | Also available: `bge-small-en-v1.5`, `gte-small`, `e5-small-v2`, `jina-v2-small-en`, `bge-base-en-v1.5`, `gte-base`, `jina-v2-base-en`, `snowflake-arctic-embed-m-v2.0`, `multilingual-e5-small`, `multilingual-e5-base`, `bge-m3`
 - **Transport:** MCP over SSE (Server-Sent Events) at `http://127.0.0.1:7437/mcp/sse`
 - **HTTP API:** REST API at `http://127.0.0.1:7437/v1/`
+- **Platforms:** linux-x64, linux-arm64, darwin-x64, darwin-arm64, windows-x64
+- **Updates:** SHA256 binary verification on self-update
+
+## OpenClaw Integration
+
+ctxovrflw integrates with [OpenClaw](https://openclaw.dev) via the `@ctxovrflw/memory-ctxovrflw` plugin:
+
+```bash
+openclaw plugins install @ctxovrflw/memory-ctxovrflw
+```
+
+The plugin replaces OpenClaw's built-in memory with ctxovrflw's semantic search, providing `memory_search`, `memory_store`, `memory_forget`, and `memory_status` tools natively. `ctxovrflw init` detects OpenClaw and offers to install the plugin automatically.
 
 ## Tiers
 
@@ -108,7 +138,10 @@ ctxovrflw version           # Check current version
 | **Memories** | 100 | Unlimited | Unlimited |
 | **Devices** | 1 | 3 | Unlimited |
 | **Semantic search** | ✓ | ✓ | ✓ |
+| **Hybrid search (RRF)** | ✓ | ✓ | ✓ (boosted) |
 | **Cloud sync** | — | ✓ (E2E encrypted) | ✓ (E2E encrypted) |
+| **Knowledge graph** | — | — | ✓ |
+| **Consolidation** | — | — | ✓ |
 | **Context synthesis** | — | — | ✓ |
 
 ## Source Available
