@@ -51,6 +51,13 @@ async fn main() -> anyhow::Result<()> {
         Command::Recall { query, limit } => cli::recall::run(&cfg, &query, limit).await,
         Command::Forget { id, dry_run } => cli::forget::run(&cfg, &id, dry_run).await,
         Command::Memories => cli::memories::run(&cfg).await,
+        Command::Graph { action } => {
+            match action {
+                cli::GraphAction::Build => cli::graph::build()?,
+                cli::GraphAction::Stats => cli::graph::stats()?,
+            }
+            Ok(())
+        },
         Command::Reindex => {
             cli::reindex::run()?;
             Ok(())

@@ -1,5 +1,6 @@
 pub mod account;
 pub mod forget;
+pub mod graph;
 pub mod init;
 pub mod init_auto;
 pub mod init_tui;
@@ -89,6 +90,12 @@ pub enum Command {
     /// Browse, search, and manage memories in an interactive TUI
     Memories,
 
+    /// Knowledge graph commands
+    Graph {
+        #[command(subcommand)]
+        action: GraphAction,
+    },
+
     /// Rebuild embeddings for all memories (fixes missing semantic search results)
     Reindex,
 
@@ -127,6 +134,14 @@ pub enum Command {
     /// Run as MCP server (stdio transport) — used by Cursor/Claude Desktop
     #[command(hide = true)]
     Mcp,
+}
+
+#[derive(Subcommand)]
+pub enum GraphAction {
+    /// Build knowledge graph from existing memories (extracts entities from subjects and tags)
+    Build,
+    /// Show graph statistics
+    Stats,
 }
 
 #[derive(Subcommand)]
