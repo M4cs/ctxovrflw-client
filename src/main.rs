@@ -61,9 +61,10 @@ async fn main() -> anyhow::Result<()> {
         },
         Command::Model { action } => {
             match action {
-                cli::ModelAction::List => cli::model::list()?,
-                cli::ModelAction::Current => cli::model::current()?,
-                cli::ModelAction::Switch { model_id } => cli::model::switch(&model_id).await?,
+                Some(cli::ModelAction::List) => cli::model::list()?,
+                Some(cli::ModelAction::Current) => cli::model::current()?,
+                Some(cli::ModelAction::Switch { model_id }) => cli::model::switch(&model_id).await?,
+                None => cli::model_tui::run(&cfg).await?,
             }
             Ok(())
         },

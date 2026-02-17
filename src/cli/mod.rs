@@ -9,6 +9,7 @@ pub mod login;
 pub mod logout;
 pub mod memories;
 pub mod model;
+pub mod model_tui;
 pub mod recall;
 pub mod reindex;
 pub mod remember;
@@ -99,10 +100,10 @@ pub enum Command {
         action: GraphAction,
     },
 
-    /// Manage embedding models
+    /// Manage embedding models (interactive TUI when no subcommand)
     Model {
         #[command(subcommand)]
-        action: ModelAction,
+        action: Option<ModelAction>,
     },
 
     /// Rebuild embeddings for all memories (fixes missing semantic search results)
