@@ -1,11 +1,19 @@
 ---
 name: ctxovrflw
-description: Shared AI memory layer — recall context from past sessions and other AI tools, store decisions and preferences automatically. Use when you need context aboutuser preferences, past decisions, project setup, or any information that may have been discussed in another AI tool. Also use proactively to store important context as it comes up. Cross-tool: what Cursor stores, Claude Code can recall.
+description: Shared AI memory layer — recall context from past sessions and other AI tools, store decisions and preferences automatically. Use when you need context about user preferences, past decisions, project setup, or any information that may have been discussed in another AI tool. Also use proactively to store important context as it comes up. Cross-tool: what Cursor stores, Claude Code can recall.
 metadata:
   author: ctxovrflw
-  version: "0.5.1"
+  version: "0.5.2"
   website: https://ctxovrflw.dev
-compatibility: Requires ctxovrflw daemon running locally (MCP server on port 7437)
+  openclaw:
+    emoji: "🧠"
+    skillKey: ctxovrflw
+    requires:
+      config:
+        - "plugins.entries.ctxovrflw.enabled"
+    install:
+      plugin: "@ctxovrflw/openclaw-plugin"
+compatibility: Requires ctxovrflw daemon running locally (MCP server on port 7437). Install the OpenClaw plugin via `openclaw plugins install @ctxovrflw/openclaw-plugin` for automatic setup, or use standalone with MCP/CLI.
 ---
 
 # ctxovrflw — Shared Memory
