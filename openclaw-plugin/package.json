@@ -7,8 +7,18 @@
   "homepage": "https://ctxovrflw.dev",
   "repository": {
     "type": "git",
-    "url": "https://github.com/M4cs/ctxovrflw-client"
+    "url": "https://github.com/M4cs/ctxovrflw-client",
+    "directory": "openclaw-plugin"
   },
+  "keywords": [
+    "openclaw",
+    "openclaw-plugin",
+    "memory",
+    "ai-memory",
+    "ctxovrflw",
+    "semantic-search",
+    "knowledge-graph"
+  ],
   "openclaw": {
     "extensions": ["./index.ts"]
   },
@@ -16,5 +26,8 @@
     "index.ts",
     "openclaw.plugin.json",
     "README.md"
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }
