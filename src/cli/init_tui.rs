@@ -116,6 +116,9 @@ enum FlowState {
     OpenClawIntegration,
     AskOpenClawMigrate,
     RunOpenClawMigrate,
+    // Model
+    SelectModel,
+    DownloadingSelectedModel,
     // Daemon
     DaemonMenu,
     InstallingService,
@@ -262,10 +265,7 @@ impl App {
     }
 
     fn check_model(&mut self) {
-        // TODO: Integrate with new configurable embedding models
-        // Show user a selection list from embed::models::MODELS instead of
-        // auto-downloading MiniLM. Store choice in config.embedding_model.
-        // Priority is the `ctxovrflw model switch` command for now.
+        use crate::embed::models::MODELS;
         
         let model_ok = crate::embed::Embedder::model_path()
             .ok()
@@ -273,29 +273,25 @@ impl App {
             .unwrap_or(false);
 
         if model_ok {
-            let size = crate::embed::Embedder::model_path()
-                .ok()
-                .and_then(|p| std::fs::metadata(p).ok())
-                .map(|m| m.len() as f64 / 1_048_576.0)
-                .unwrap_or(0.0);
-            self.lines.push(LogLine::ok(format!("Model loaded ({size:.1} MB)")));
-            self.complete_step();
-            self.flow = FlowState::DetectingTools;
-            self.advance();
+            let current = crate::embed::models::get_model(&self.cfg.embedding_model);
+            let name = current.map(|m| m.name).unwrap_or("unknown");
+            self.lines.push(LogLine::ok(format!("Current model: {name}")));
         } else {
-            self.lines.push(LogLine::info("Downloading embedding model (~23MB)..."));
-            self.interaction = Interaction::Spinner {
-                message: "Downloading model...".into(),
-            };
-            self.flow = FlowState::DownloadingModel;
-
-            // Spawn async download
-            let tx = self.async_tx.clone();
-            tokio::spawn(async move {
-                let result = init::download_model().await;
-                let _ = tx.send(AsyncMsg::ModelDownloaded(result));
-            });
+            self.lines.push(LogLine::info("No embedding model installed"));
         }
+        
+        // Always let user pick a model
+        let items: Vec<String> = MODELS.iter().map(|m| {
+            let current_marker = if m.id == self.cfg.embedding_model && model_ok { " ✓" } else { "" };
+            format!("{} — {}d, ~{}MB{}", m.name, m.dim, m.size_mb, current_marker)
+        }).collect();
+        
+        self.interaction = Interaction::Menu {
+            title: "Choose an embedding model:".into(),
+            items,
+            cursor: MODELS.iter().position(|m| m.id == self.cfg.embedding_model).unwrap_or(0),
+        };
+        self.flow = FlowState::SelectModel;
     }
 
     fn detect_tools(&mut self) {
@@ -312,6 +308,16 @@ impl App {
             self.flow = FlowState::DaemonMenu;
             self.advance();
         } else {
+            // Show detected agents with config path info
+            for agent in &self.detected_agents {
+                let path_info = agent.config_path.as_ref()
+                    .map(|p| format!(" ({})", p.display()))
+                    .or_else(|| agent.def.cli_install.map(|_| " (CLI)".to_string()))
+                    .unwrap_or_default();
+                self.lines.push(LogLine::ok(format!("Found {}{}", agent.def.name, path_info)));
+            }
+            self.lines.push(LogLine::blank());
+            
             let items: Vec<(String, bool)> = self.detected_agents
                 .iter()
                 .map(|a| (a.def.name.to_string(), true))
@@ -333,12 +339,14 @@ impl App {
             let agent = &self.detected_agents[idx];
             let name = agent.def.name;
 
+            // Sub-section header per agent
+            self.lines.push(LogLine::header(format!("─ {name}")));
+
             // Try CLI install
             if let Some(cmd_template) = agent.def.cli_install {
                 let cmd = cmd_template
                     .replace("{port}", &self.cfg.port.to_string())
                     .replace("http://127.0.0.1:{port}/mcp/sse", &url);
-                self.lines.push(LogLine::info(format!("→ {cmd}")));
                 let parts: Vec<&str> = cmd.split_whitespace().collect();
                 if parts.len() >= 2 {
                     let output = std::process::Command::new(parts[0])
@@ -348,31 +356,20 @@ impl App {
                         .output();
                     match output {
                         Ok(out) if out.status.success() => {
-                            self.lines.push(LogLine::ok(format!("{name} (CLI)")));
-                            let stdout = String::from_utf8_lossy(&out.stdout);
-                            let stderr = String::from_utf8_lossy(&out.stderr);
-                            for line in stdout.lines().chain(stderr.lines()).take(5) {
-                                if !line.trim().is_empty() {
-                                    self.lines.push(LogLine::plain(line.trim()));
-                                }
-                            }
+                            self.lines.push(LogLine::ok("MCP server registered via CLI"));
                             self.tools_installed.push(name.to_string());
                         }
-                        Ok(out) => {
-                            let stderr = String::from_utf8_lossy(&out.stderr);
-                            self.lines.push(LogLine::err(format!("{name} — CLI failed")));
-                            for line in stderr.lines().take(3) {
-                                if !line.trim().is_empty() {
-                                    self.lines.push(LogLine::plain(format!("  {}", line.trim())));
-                                }
-                            }
+                        Ok(_) => {
+                            self.lines.push(LogLine::err("CLI registration failed"));
                             self.lines.push(LogLine::info(format!("Run manually: {cmd}")));
                         }
                         Err(_) => {
-                            self.lines.push(LogLine::err(format!("{name} — run manually: {cmd}")));
+                            self.lines.push(LogLine::err("Command not found"));
+                            self.lines.push(LogLine::info(format!("Run manually: {cmd}")));
                         }
                     }
                 }
+                self.lines.push(LogLine::blank());
                 continue;
             }
 
@@ -391,25 +388,28 @@ impl App {
                 };
 
                 if needs_overwrite {
+                    self.lines.push(LogLine::info("Existing config found — will ask to overwrite"));
                     self.pending_overwrites.push((idx, config_path));
                 } else {
                     let mcp_entry = init::sse_mcp_json(&self.cfg);
                     match write_mcp_config_quiet(&config_path, &mcp_entry) {
                         Ok(_) => {
                             self.lines.push(LogLine::ok(format!(
-                                "{name} → {}", config_path.display()
+                                "Config written: {}", config_path.display()
                             )));
                             self.tools_installed.push(name.to_string());
                         }
-                        Err(e) => self.lines.push(LogLine::err(format!("{name}: {e}"))),
+                        Err(e) => self.lines.push(LogLine::err(format!("Failed: {e}"))),
                     }
                 }
+                self.lines.push(LogLine::blank());
                 continue;
             }
 
             // Manual
-            self.lines.push(LogLine::info(format!("{name} — add MCP URL manually: {url}")));
+            self.lines.push(LogLine::info(format!("Add MCP URL manually: {url}")));
             self.tools_installed.push(name.to_string());
+            self.lines.push(LogLine::blank());
         }
 
         // If there are overwrite prompts, show batch selection
@@ -806,6 +806,45 @@ impl App {
                         self.interaction = Interaction::None;
 
                         match self.flow {
+                            FlowState::SelectModel => {
+                                use crate::embed::models::MODELS;
+                                let model = &MODELS[choice];
+                                
+                                // Check if this model is already installed and current
+                                let already_installed = model.id == self.cfg.embedding_model && {
+                                    crate::embed::Embedder::model_path()
+                                        .ok()
+                                        .map(|p| p.exists() && std::fs::metadata(&p).map(|m| m.len() > 1_000_000).unwrap_or(false))
+                                        .unwrap_or(false)
+                                };
+                                
+                                if already_installed {
+                                    self.lines.push(LogLine::ok(format!("Keeping current model: {}", model.name)));
+                                    self.complete_step();
+                                    self.flow = FlowState::DetectingTools;
+                                    self.advance();
+                                } else {
+                                    self.lines.push(LogLine::info(format!(
+                                        "Downloading {} (~{}MB)...", model.name, model.size_mb
+                                    )));
+                                    self.interaction = Interaction::Spinner {
+                                        message: format!("Downloading {}...", model.name),
+                                    };
+                                    self.flow = FlowState::DownloadingSelectedModel;
+                                    
+                                    let model_id = model.id.to_string();
+                                    let model_dim = model.dim;
+                                    let onnx_url = model.onnx_url.to_string();
+                                    let tokenizer_url = model.tokenizer_url.to_string();
+                                    let tx = self.async_tx.clone();
+                                    tokio::spawn(async move {
+                                        let result = download_model_quiet(
+                                            &model_id, model_dim, &onnx_url, &tokenizer_url
+                                        ).await;
+                                        let _ = tx.send(AsyncMsg::ModelDownloaded(result));
+                                    });
+                                }
+                            }
                             FlowState::OpenClawMenu => {
                                 self.openclaw_menu_choice = choice;
                                 match choice {
@@ -1069,8 +1108,14 @@ impl App {
                 AsyncMsg::ModelDownloaded(result) => {
                     self.interaction = Interaction::None;
                     match result {
-                        Ok(_) => self.lines.push(LogLine::ok("Model downloaded")),
-                        Err(e) => self.lines.push(LogLine::err(format!("Download failed: {e}"))),
+                        Ok(_) => {
+                            // Reload config to pick up model change
+                            self.cfg = Config::load().unwrap_or_default();
+                            let name = crate::embed::models::get_model(&self.cfg.embedding_model)
+                                .map(|m| m.name).unwrap_or("model");
+                            self.lines.push(LogLine::ok(format!("{name} ready")));
+                        }
+                        Err(e) => self.lines.push(LogLine::err(format!("Model setup failed: {e}"))),
                     }
                     self.complete_step();
                     self.flow = FlowState::DetectingTools;
@@ -1349,6 +1394,103 @@ fn render_tabs(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_style(Style::default().fg(Color::DarkGray));
     f.render_widget(Paragraph::new(Line::from(spans)).block(block), area);
+}
+
+// ── Quiet model download (no stdout) ────────────────────────
+
+async fn download_model_quiet(
+    model_id: &str,
+    model_dim: usize,
+    onnx_url: &str,
+    tokenizer_url: &str,
+) -> Result<()> {
+    use crate::embed::set_embedding_dim;
+    
+    let model_dir = Config::model_dir()?;
+    let model_subdir = model_dir.join(model_id);
+    std::fs::create_dir_all(&model_subdir)?;
+    
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::limited(10))
+        .build()?;
+    
+    // Download ONNX model
+    let model_file = model_subdir.join("model.onnx");
+    if !model_file.exists() {
+        let resp = client.get(onnx_url).send().await?;
+        if !resp.status().is_success() {
+            anyhow::bail!("HTTP {} downloading model from {}", resp.status(), onnx_url);
+        }
+        let bytes = resp.bytes().await?;
+        if bytes.len() < 100_000 {
+            anyhow::bail!("Model file too small ({} bytes)", bytes.len());
+        }
+        std::fs::write(&model_file, &bytes)?;
+    }
+    
+    // Download tokenizer
+    let tokenizer_file = model_subdir.join("tokenizer.json");
+    if !tokenizer_file.exists() {
+        let resp = client.get(tokenizer_url).send().await?;
+        if !resp.status().is_success() {
+            anyhow::bail!("HTTP {} downloading tokenizer", resp.status());
+        }
+        let bytes = resp.bytes().await?;
+        std::fs::write(&tokenizer_file, &bytes)?;
+    }
+    
+    // Update config
+    let mut cfg = Config::load().unwrap_or_default();
+    cfg.embedding_model = model_id.to_string();
+    cfg.embedding_dim = model_dim;
+    cfg.save()?;
+    
+    // Set runtime dimension for db::open
+    set_embedding_dim(model_dim);
+    
+    // If there's an existing database, we need to recreate it
+    let db_path = Config::db_path()?;
+    if db_path.exists() {
+        // Export, nuke, reimport, re-embed
+        let conn = crate::db::open()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at, deleted, synced_at FROM memories ORDER BY created_at"
+        )?;
+        let rows: Vec<(String, String, String, String, Option<String>, Option<String>, Option<String>, Option<String>, String, String, i32, Option<String>)> = stmt.query_map([], |row| {
+            Ok((
+                row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?,
+                row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?,
+                row.get(8)?, row.get(9)?, row.get(10)?, row.get(11)?,
+            ))
+        })?.collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(stmt);
+        drop(conn);
+        
+        // Nuke and recreate
+        std::fs::remove_file(&db_path)?;
+        let conn = crate::db::open()?;
+        
+        // Re-import
+        for row in &rows {
+            conn.execute(
+                "INSERT INTO memories (id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at, deleted, synced_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                rusqlite::params![row.0, row.1, row.2, row.3, row.4, row.5, row.6, row.7, row.8, row.9, row.10, row.11],
+            )?;
+        }
+        
+        // Re-embed
+        let embedder_arc = crate::embed::get_or_init()?;
+        let mut embedder = embedder_arc.lock().unwrap_or_else(|e| e.into_inner());
+        for row in &rows {
+            if row.10 != 0 { continue; } // skip deleted
+            let embedding = embedder.embed(&row.1)?;
+            let bytes: Vec<u8> = embedding.iter().flat_map(|f| f.to_le_bytes()).collect();
+            conn.execute("UPDATE memories SET embedding = ?1 WHERE id = ?2", rusqlite::params![bytes, row.0])?;
+            conn.execute("INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)", rusqlite::params![row.0, bytes])?;
+        }
+    }
+    
+    Ok(())
 }
 
 // ── Entry Point ─────────────────────────────────────────────
