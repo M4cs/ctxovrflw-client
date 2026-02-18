@@ -18,8 +18,9 @@ compatibility: Requires ctxovrflw daemon running locally (MCP server on port 743
 You have access to **ctxovrflw**, a shared memory layer that persists across sessions and is
 accessible by every AI tool the user runs (Cursor, Claude Code, Cline, Windsurf, etc.).
 
-You interact with it via the MCP tools: `remember`, `recall`, `forget`, `status`, `consolidate`,
-`maintenance`, `add_entity`, `add_relation`, `traverse`, `get_relations`, `subjects`, and `manage_webhooks`.
+You interact with it via the MCP tools: `remember`, `recall`, `forget`, `update_memory`, `status`,
+`consolidate`, `maintenance`, `pin_memory`, `unpin_memory`, `add_entity`, `add_relation`, `traverse`,
+`get_relations`, `subjects`, and `manage_webhooks`.
 
 ## ⚠️ Prerequisites — ctxovrflw Must Be Installed & Running
 
@@ -185,7 +186,7 @@ recall("preferences", subject: "user") // user preferences only
 
 Use `subjects` tool to list all known entities.
 
-## Knowledge Graph (Pro Tier)
+## Knowledge Graph (Standard+ Tier)
 
 Build and traverse a knowledge graph of entities and relationships:
 
@@ -209,7 +210,13 @@ consolidate(subject: "user")  // review all memories about the user, merge dupli
 
 Use `update_memory` to merge and `forget` to remove redundant entries.
 
-## Webhooks (All Tiers)
+For autonomous upkeep, use:
+```
+maintenance(action: "run_consolidation_now")
+maintenance(action: "openclaw_schedule_hint")
+```
+
+## Webhooks (Pro Tier)
 
 Subscribe to memory events:
 

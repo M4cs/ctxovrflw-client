@@ -35,6 +35,7 @@ struct MemoryRow {
     subject: Option<String>,
     source: Option<String>,
     agent_id: Option<String>,
+    expires_at: Option<String>,
     created_at: String,
     updated_at: String,
     synced_at: Option<String>,
@@ -242,7 +243,7 @@ impl App {
 
 fn load_memories(conn: &Connection) -> Result<Vec<MemoryRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, content, type, tags, subject, source, agent_id, created_at, updated_at, synced_at, deleted
+        "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at, synced_at, deleted
          FROM memories WHERE deleted = 0
          ORDER BY created_at DESC"
     )?;
@@ -256,10 +257,11 @@ fn load_memories(conn: &Connection) -> Result<Vec<MemoryRow>> {
             subject: row.get(4)?,
             source: row.get(5)?,
             agent_id: row.get(6)?,
-            created_at: row.get(7)?,
-            updated_at: row.get(8)?,
-            synced_at: row.get(9)?,
-            deleted: row.get::<_, i32>(10)? != 0,
+            expires_at: row.get(7)?,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+            synced_at: row.get(10)?,
+            deleted: row.get::<_, i32>(11)? != 0,
         })
     })?.collect::<std::result::Result<Vec<_>, _>>()?;
 
@@ -630,10 +632,12 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
         Cell::from("ID").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Type").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Subject").style(Style::default().fg(Color::Cyan).bold()),
+        Cell::from("Source").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Tags").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Content").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Sync").style(Style::default().fg(Color::Cyan).bold()),
         Cell::from("Created").style(Style::default().fg(Color::Cyan).bold()),
+        Cell::from("Expires").style(Style::default().fg(Color::Cyan).bold()),
     ]).height(1);
 
     let rows: Vec<Row> = app.filtered.iter().map(|&idx| {
@@ -655,6 +659,8 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
             m.tags.join(", ")
         };
 
+        let source_short = m.source.as_deref().unwrap_or("—").to_string();
+        let expires_short = m.expires_at.as_deref().map(|s| &s[..10]).unwrap_or("—");
         let created_short = &m.created_at[..10];
 
         let select_marker = if is_selected { "◆" } else { " " };
@@ -665,10 +671,12 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
             Cell::from(m.id[..8].to_string()).style(Style::default().fg(Color::DarkGray)),
             Cell::from(m.memory_type.clone()),
             Cell::from(m.subject.clone().unwrap_or_else(|| "—".into())).style(Style::default().fg(Color::Magenta)),
+            Cell::from(source_short).style(Style::default().fg(Color::DarkGray)),
             Cell::from(tags_str).style(Style::default().fg(Color::Blue)),
             Cell::from(content_preview),
             Cell::from(sync_label).style(Style::default().fg(sync_color)),
             Cell::from(created_short.to_string()).style(Style::default().fg(Color::DarkGray)),
+            Cell::from(expires_short.to_string()).style(Style::default().fg(Color::DarkGray)),
         ]);
 
         if is_selected {
@@ -683,9 +691,11 @@ fn render_table(f: &mut Frame, app: &mut App, area: Rect) {
         Constraint::Length(10),   // ID
         Constraint::Length(12),   // Type
         Constraint::Length(16),   // Subject
-        Constraint::Length(16),   // Tags
-        Constraint::Fill(1),     // Content (takes remaining)
+        Constraint::Length(10),   // Source
+        Constraint::Length(14),   // Tags
+        Constraint::Fill(1),      // Content (takes remaining)
         Constraint::Length(12),   // Sync
+        Constraint::Length(12),   // Expires
         Constraint::Length(12),   // Created
     ];
 
@@ -806,6 +816,14 @@ fn render_detail(f: &mut Frame, app: &App, area: Rect) {
         Line::from(vec![
             Span::styled("Sync:     ", Style::default().fg(Color::Cyan).bold()),
             Span::raw(sync_label),
+        ]),
+        Line::from(vec![
+            Span::styled("SyncedAt: ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw(mem.synced_at.as_deref().unwrap_or("—")),
+        ]),
+        Line::from(vec![
+            Span::styled("Expires:  ", Style::default().fg(Color::Cyan).bold()),
+            Span::raw(mem.expires_at.as_deref().unwrap_or("—")),
         ]),
         Line::from(vec![
             Span::styled("Created:  ", Style::default().fg(Color::Cyan).bold()),

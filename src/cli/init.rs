@@ -465,7 +465,7 @@ Preflight query examples:
 - `recall("project constraints and do-not-do rules")`
 - `recall("user preferences for release process")`
 
-### Knowledge Graph (Pro tier)
+### Knowledge Graph (Standard+ tier)
 If available, build the knowledge graph as you work:
 - Call `add_entity` when you encounter named things: services, people, projects, tools, APIs, files
 - Call `add_relation` when you learn how things connect: "X depends on Y", "A owns B", "C uses D"
@@ -475,6 +475,8 @@ If available, build the knowledge graph as you work:
 
 ### Consolidation (Pro tier)
 Periodically (or when you notice contradictions), call `consolidate` on a subject to review related memories. Merge duplicates with `update_memory` and remove redundant ones with `forget`.
+
+For autonomous upkeep, call `maintenance` with `run_consolidation_now` for immediate cleanup or `openclaw_schedule_hint` to set background OpenClaw workflows.
 
 ### Webhooks
 Use `manage_webhooks` to set up event notifications. Users can subscribe to memory/graph changes and route them to Slack, Zapier, n8n, or custom endpoints.
@@ -1052,7 +1054,7 @@ Preflight query examples:
 - `recall("project constraints and do-not-do rules")`
 - `recall("user preferences for release process")`
 
-### Knowledge Graph (Pro tier)
+### Knowledge Graph (Standard+ tier)
 If available, build the knowledge graph as you work:
 - Call `add_entity` when you encounter named things: services, people, projects, tools, APIs, files
 - Call `add_relation` when you learn how things connect: "X depends on Y", "A owns B", "C uses D"
@@ -1062,6 +1064,8 @@ If available, build the knowledge graph as you work:
 
 ### Consolidation (Pro tier)
 Periodically (or when you notice contradictions), call `consolidate` on a subject to review related memories. Merge duplicates with `update_memory` and remove redundant ones with `forget`.
+
+For autonomous upkeep, call `maintenance` with `run_consolidation_now` for immediate cleanup or `openclaw_schedule_hint` to set background OpenClaw workflows.
 
 ### Webhooks
 Use `manage_webhooks` to set up event notifications. Users can subscribe to memory/graph changes and route them to Slack, Zapier, n8n, or custom endpoints.
