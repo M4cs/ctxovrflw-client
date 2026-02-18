@@ -1,4 +1,5 @@
 mod capability;
+mod chunking;
 mod cli;
 mod config;
 mod crypto;

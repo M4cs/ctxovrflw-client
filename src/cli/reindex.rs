@@ -40,8 +40,39 @@ pub fn run() -> Result<()> {
                 success += 1;
             }
             Err(e) => {
-                eprintln!("  Failed to embed {}: {}", &id[..8], e);
-                failed += 1;
+                // Fallback for very long memories: chunk and average embeddings.
+                let chunks = crate::chunking::split_text_with_overlap(content, 1800, 220);
+                if chunks.len() > 1 {
+                    let mut agg: Option<Vec<f32>> = None;
+                    let mut n = 0usize;
+                    for ch in &chunks {
+                        if let Ok(v) = embedder.embed(ch) {
+                            if let Some(ref mut a) = agg {
+                                for (ai, vi) in a.iter_mut().zip(v.iter()) { *ai += *vi; }
+                            } else {
+                                agg = Some(v);
+                            }
+                            n += 1;
+                        }
+                    }
+
+                    if let Some(mut vec) = agg {
+                        if n > 1 {
+                            for x in &mut vec { *x /= n as f32; }
+                        }
+                        let _ = conn.execute(
+                            "INSERT OR REPLACE INTO memory_vectors (id, embedding) VALUES (?1, ?2)",
+                            rusqlite::params![id, db::memories::bytemuck_cast_pub(&vec)],
+                        );
+                        success += 1;
+                    } else {
+                        eprintln!("  Failed to embed {}: {}", &id[..8], e);
+                        failed += 1;
+                    }
+                } else {
+                    eprintln!("  Failed to embed {}: {}", &id[..8], e);
+                    failed += 1;
+                }
             }
         }
 

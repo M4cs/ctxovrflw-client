@@ -5,6 +5,10 @@ use crate::config::{Config, Tier};
 use crate::db;
 use crate::validation::{self, validate_tags, validate_subject, validate_agent_id, MAX_CONTENT_SIZE};
 
+const MEMORY_CHUNK_THRESHOLD_CHARS: usize = 2200;
+const MEMORY_CHUNK_SIZE_CHARS: usize = 1800;
+const MEMORY_CHUNK_OVERLAP_CHARS: usize = 220;
+
 pub fn list_tools(cfg: &Config) -> Vec<Value> {
     let mut tools = vec![
         json!({
@@ -568,16 +572,6 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
         }
     }
 
-    // Generate embedding if semantic search is available
-    let embedding = if cfg.tier.semantic_search_enabled() {
-        match crate::embed::get_or_init() {
-            Ok(emb_arc) => emb_arc.lock().unwrap_or_else(|e| e.into_inner()).embed(content).ok(),
-            Err(_) => None,
-        }
-    } else {
-        None
-    };
-
     let subject = args["subject"].as_str();
     if let Err(e) = validate_subject(subject) {
         return Ok(json!({
@@ -602,45 +596,102 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
         })),
     };
 
-    let memory = db::memories::store_with_expiry(
-        &conn,
-        content,
-        &memory_type,
-        &tags,
-        subject,
-        Some("mcp"),
-        embedding.as_deref(),
-        expires_at.as_deref(),
-        agent_id,
-    )?;
-
-    // Immediate push to cloud
-    if cfg.is_logged_in() {
-        let id = memory.id.clone();
-        let cfg2 = cfg.clone();
-        tokio::spawn(async move {
-            let _ = crate::sync::push_one(&cfg2, &id).await;
-        });
-    }
-
-    { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
-
-    // Auto-extract entities from memory into knowledge graph (Standard+ tier, best-effort)
-    if cfg.tier.knowledge_graph_enabled() {
-        let _ = auto_extract_graph_from_memory(&conn, &memory);
-    }
-
-    let expiry_note = match &memory.expires_at {
-        Some(e) => format!(" (expires: {e})"),
-        None => String::new(),
+    let chunks = if content.chars().count() > MEMORY_CHUNK_THRESHOLD_CHARS {
+        crate::chunking::split_text_with_overlap(content, MEMORY_CHUNK_SIZE_CHARS, MEMORY_CHUNK_OVERLAP_CHARS)
+    } else {
+        vec![content.to_string()]
     };
 
-    Ok(json!({
-        "content": [{
-            "type": "text",
-            "text": format!("Remembered: {} (id: {}){}", content, memory.id, expiry_note)
-        }]
-    }))
+    let chunk_parent = if chunks.len() > 1 {
+        Some(format!("chunkset:{}", uuid::Uuid::new_v4()))
+    } else {
+        None
+    };
+
+    let mut stored: Vec<db::memories::Memory> = Vec::new();
+    for (idx, chunk) in chunks.iter().enumerate() {
+        let mut chunk_tags = tags.clone();
+        if let Some(parent) = &chunk_parent {
+            chunk_tags.push("chunked".to_string());
+            chunk_tags.push(parent.clone());
+            chunk_tags.push(format!("chunk_index:{}", idx + 1));
+            chunk_tags.push(format!("chunk_total:{}", chunks.len()));
+        }
+        let chunk_tags = validate_tags(&chunk_tags).unwrap_or(chunk_tags);
+
+        // Generate embedding per chunk if semantic search is available
+        let embedding = if cfg.tier.semantic_search_enabled() {
+            match crate::embed::get_or_init() {
+                Ok(emb_arc) => emb_arc.lock().unwrap_or_else(|e| e.into_inner()).embed(chunk).ok(),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
+        let mem = db::memories::store_with_expiry(
+            &conn,
+            chunk,
+            &memory_type,
+            &chunk_tags,
+            subject,
+            Some("mcp"),
+            embedding.as_deref(),
+            expires_at.as_deref(),
+            agent_id,
+        )?;
+
+        // Immediate push to cloud
+        if cfg.is_logged_in() {
+            let id = mem.id.clone();
+            let cfg2 = cfg.clone();
+            tokio::spawn(async move {
+                let _ = crate::sync::push_one(&cfg2, &id).await;
+            });
+        }
+
+        { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": mem })); }
+
+        // Auto-extract entities from memory into knowledge graph (Standard+ tier, best-effort)
+        if cfg.tier.knowledge_graph_enabled() {
+            let _ = auto_extract_graph_from_memory(&conn, &mem);
+        }
+
+        stored.push(mem);
+    }
+
+    if stored.len() == 1 {
+        let memory = &stored[0];
+        let expiry_note = match &memory.expires_at {
+            Some(e) => format!(" (expires: {e})"),
+            None => String::new(),
+        };
+
+        Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": format!("Remembered: {} (id: {}){}", content, memory.id, expiry_note)
+            }]
+        }))
+    } else {
+        let ids: Vec<String> = stored.iter().map(|m| m.id.clone()).collect();
+        Ok(json!({
+            "content": [{
+                "type": "text",
+                "text": format!(
+                    "Remembered as {} linked chunks ({}). First id: {}",
+                    stored.len(),
+                    chunk_parent.unwrap_or_default(),
+                    ids.first().cloned().unwrap_or_default()
+                )
+            }],
+            "details": {
+                "chunked": true,
+                "count": stored.len(),
+                "ids": ids
+            }
+        }))
+    }
 }
 
 async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {

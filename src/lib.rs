@@ -1,4 +1,5 @@
 pub mod capability;
+pub mod chunking;
 pub mod config;
 pub mod crypto;
 pub mod db;

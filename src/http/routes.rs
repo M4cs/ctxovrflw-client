@@ -9,6 +9,10 @@ use serde_json::{json, Value};
 use crate::config::Config;
 use crate::db;
 use crate::validation::{sanitize_error, validate_tags, validate_subject, validate_agent_id, resolve_expiry, MAX_CONTENT_SIZE};
+
+const MEMORY_CHUNK_THRESHOLD_CHARS: usize = 2200;
+const MEMORY_CHUNK_SIZE_CHARS: usize = 1800;
+const MEMORY_CHUNK_OVERLAP_CHARS: usize = 220;
 use super::AppState;
 
 pub fn router(state: AppState) -> Router {
@@ -116,36 +120,76 @@ async fn store_memory(State(state): State<AppState>, Json(body): Json<StoreReque
         .unwrap_or_default();
     let source = body.source.as_deref().unwrap_or("api");
 
-    // Generate embedding using shared embedder (spawn_blocking to avoid blocking tokio)
-    let embedding = if let Some(ref emb) = state.embedder {
-        let emb = emb.clone();
-        let content = body.content.clone();
-        tokio::task::spawn_blocking(move || {
-            let mut e = emb.lock().unwrap_or_else(|e| e.into_inner());
-            e.embed(&content).ok()
-        }).await.ok().flatten()
-    } else {
-        None
-    };
-
     let expires_at = match resolve_expiry(body.ttl.as_deref(), body.expires_at.as_deref()) {
         Ok(e) => e,
         Err(e) => return Json(json!({ "ok": false, "error": e })),
     };
 
-    match db::memories::store_with_expiry(&conn, &body.content, &mtype, &tags, body.subject.as_deref(), Some(source), embedding.as_deref(), expires_at.as_deref(), body.agent_id.as_deref()) {
-        Ok(memory) => {
-            { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
-            if cfg.is_logged_in() {
-                let id = memory.id.clone();
-                let cfg2 = cfg.clone();
-                tokio::spawn(async move {
-                    let _ = crate::sync::push_one(&cfg2, &id).await;
-                });
-            }
-            Json(json!({ "ok": true, "memory": memory }))
+    let chunks = if body.content.chars().count() > MEMORY_CHUNK_THRESHOLD_CHARS {
+        crate::chunking::split_text_with_overlap(&body.content, MEMORY_CHUNK_SIZE_CHARS, MEMORY_CHUNK_OVERLAP_CHARS)
+    } else {
+        vec![body.content.clone()]
+    };
+
+    let chunk_parent = if chunks.len() > 1 {
+        Some(format!("chunkset:{}", uuid::Uuid::new_v4()))
+    } else {
+        None
+    };
+
+    let mut created: Vec<db::memories::Memory> = Vec::new();
+
+    for (idx, chunk) in chunks.iter().enumerate() {
+        let mut chunk_tags = tags.clone();
+        if let Some(parent) = &chunk_parent {
+            chunk_tags.push("chunked".to_string());
+            chunk_tags.push(parent.clone());
+            chunk_tags.push(format!("chunk_index:{}", idx + 1));
+            chunk_tags.push(format!("chunk_total:{}", chunks.len()));
         }
-        Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
+        let chunk_tags = validate_tags(&chunk_tags).unwrap_or(chunk_tags);
+
+        // Generate embedding using shared embedder (spawn_blocking to avoid blocking tokio)
+        let embedding = if let Some(ref emb) = state.embedder {
+            let emb = emb.clone();
+            let content = chunk.clone();
+            tokio::task::spawn_blocking(move || {
+                let mut e = emb.lock().unwrap_or_else(|e| e.into_inner());
+                e.embed(&content).ok()
+            }).await.ok().flatten()
+        } else {
+            None
+        };
+
+        match db::memories::store_with_expiry(&conn, chunk, &mtype, &chunk_tags, body.subject.as_deref(), Some(source), embedding.as_deref(), expires_at.as_deref(), body.agent_id.as_deref()) {
+            Ok(memory) => {
+                { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
+                if cfg.is_logged_in() {
+                    let id = memory.id.clone();
+                    let cfg2 = cfg.clone();
+                    tokio::spawn(async move {
+                        let _ = crate::sync::push_one(&cfg2, &id).await;
+                    });
+                }
+                created.push(memory);
+            }
+            Err(e) => return Json(json!({ "ok": false, "error": sanitize_error(&e) })),
+        }
+    }
+
+    if created.len() == 1 {
+        Json(json!({ "ok": true, "memory": created.remove(0) }))
+    } else {
+        let ids: Vec<String> = created.iter().map(|m| m.id.clone()).collect();
+        Json(json!({
+            "ok": true,
+            "chunked": true,
+            "chunk_parent": chunk_parent,
+            "count": created.len(),
+            "memory": created.first(),
+            "memory_ids": ids,
+            "memories": created
+        }))
     }
 }
 
