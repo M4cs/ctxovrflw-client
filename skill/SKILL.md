@@ -211,6 +211,11 @@ consolidate(subject: "user")  // review all memories about the user, merge dupli
 
 Use `update_memory` to merge and `forget` to remove redundant entries.
 
+**⚠️ Safety:** Consolidation uses LLM judgment and can lose nuance in bad merges.
+- Run `ctxovrflw export` before consolidating (backup)
+- Consolidate per-subject, not everything at once
+- Review results — use `forget` to undo bad merges
+
 ## Webhooks (All Tiers)
 
 Subscribe to memory events:
