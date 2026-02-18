@@ -1,4 +1,3 @@
-#[cfg(feature = "pro")]
 pub mod graph;
 pub mod memories;
 pub mod search;

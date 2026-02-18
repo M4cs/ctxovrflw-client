@@ -18,30 +18,8 @@ compatibility: Requires ctxovrflw daemon running locally (MCP server on port 743
 You have access to **ctxovrflw**, a shared memory layer that persists across sessions and is
 accessible by every AI tool the user runs (Cursor, Claude Code, Cline, Windsurf, etc.).
 
-Most AI tools interact with ctxovrflw via MCP tools: `remember`, `recall`, `update_memory`, `forget`,
-`status`, `consolidate`, `add_entity`, `add_relation`, `traverse`, `get_relations`, `search_entities`,
-`subjects`, and `manage_webhooks`.
-
-### OpenClaw Users
-
-OpenClaw uses a **plugin** (not MCP) for ctxovrflw integration. `ctxovrflw init` detects OpenClaw
-and offers three setup paths:
-
-1. **Plugin + Skill + Agent Rules** (recommended) — full integration with native memory tools
-2. **Plugin only** — installs `@ctxovrflw/memory-ctxovrflw` for native `memory_search`/`memory_store`/`memory_forget`/`memory_status`
-3. **Skill + Agent Rules only** — CLI-based access via `ctxovrflw remember`/`ctxovrflw recall`
-
-**With the plugin installed**, use `memory_search`, `memory_store`, `memory_forget`, and `memory_status`
-as native tool calls. Auto-recall injects relevant memories before each turn automatically.
-
-**Without the plugin**, use the ctxovrflw CLI via shell:
-```bash
-ctxovrflw remember "fact to store"
-ctxovrflw recall "search query"
-ctxovrflw memories    # Interactive TUI browser
-```
-
-**Manual plugin install:** `openclaw plugins install @ctxovrflw/memory-ctxovrflw`
+You interact with it via the MCP tools: `remember`, `recall`, `forget`, `status`, `consolidate`,
+`add_entity`, `add_relation`, `traverse`, `get_relations`, `subjects`, and `manage_webhooks`.
 
 ## ⚠️ Prerequisites — ctxovrflw Must Be Installed & Running
 
@@ -73,24 +51,6 @@ After install:
 ```bash
 ctxovrflw init -y  # Non-interactive setup — auto-configures everything, starts daemon
 ctxovrflw login    # Authenticate with cloud (optional, needed for sync)
-```
-
-### Usage via CLI
-
-Beyond MCP tools, ctxovrflw provides a full CLI:
-
-```bash
-ctxovrflw memories          # Interactive memory browser (TUI)
-ctxovrflw model             # Embedding model manager (TUI) — 12 models available
-ctxovrflw model list        # List available models
-ctxovrflw model current     # Show active model
-ctxovrflw model switch <n>  # Hotswap embedding model
-ctxovrflw graph build       # Build knowledge graph from memories (Pro)
-ctxovrflw graph stats       # Knowledge graph statistics (Pro)
-ctxovrflw remember "text"   # Store a memory from CLI
-ctxovrflw recall "query"    # Search memories from CLI
-ctxovrflw status            # Daemon status
-ctxovrflw update            # Self-update (SHA256 verified)
 ```
 
 The `-y` / `--yes` flag runs init non-interactively: creates config, downloads the model,
@@ -231,11 +191,6 @@ consolidate(subject: "user")  // review all memories about the user, merge dupli
 ```
 
 Use `update_memory` to merge and `forget` to remove redundant entries.
-
-**⚠️ Safety:** Consolidation uses LLM judgment and can lose nuance in bad merges.
-- Run `ctxovrflw export` before consolidating (backup)
-- Consolidate per-subject, not everything at once
-- Review results — use `forget` to undo bad merges
 
 ## Webhooks (All Tiers)
 

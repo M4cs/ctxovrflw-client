@@ -122,10 +122,7 @@ impl Tier {
     }
 
     pub fn knowledge_graph_enabled(&self) -> bool {
-        #[cfg(feature = "pro")]
-        { matches!(self, Tier::Pro) }
-        #[cfg(not(feature = "pro"))]
-        { false }
+        matches!(self, Tier::Standard | Tier::Pro)
     }
 }
 
@@ -276,7 +273,7 @@ impl Config {
         match feature {
             "hybrid_search" => self.tier.cloud_sync_enabled(), // standard+
             "knowledge_graph" => self.tier.knowledge_graph_enabled(),
-            "webhooks" => self.tier.knowledge_graph_enabled(), // pro only
+            "webhooks" => matches!(self.tier, Tier::Pro),
             "consolidation" => self.tier.consolidation_enabled(),
             "context_synthesis" => self.tier.context_synthesis_enabled(),
             _ => false,

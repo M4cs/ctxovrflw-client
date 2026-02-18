@@ -987,52 +987,30 @@ You have persistent, cross-agent memory via ctxovrflw. Use it automatically — 
 - `memory/YYYY-MM-DD.md` — daily raw logs
 - `MEMORY.md` — curated long-term context (main session only, never in group chats)
 
-### How to call ctxovrflw from OpenClaw
+### How to use ctxovrflw from OpenClaw
 
-**If the ctxovrflw plugin is installed** (`openclaw plugins install @ctxovrflw/memory-ctxovrflw`),
-memory tools work natively — use `memory_store`, `memory_search`, `memory_forget`, and
-`memory_status` directly as tool calls. The plugin handles auto-recall and auto-capture too.
+**Option 1: Plugin (recommended)** — `openclaw plugins install @ctxovrflw/memory-ctxovrflw`
 
-**Fallback: mcporter** (for knowledge graph and advanced MCP tools not covered by the plugin):
+Replaces OpenClaw's built-in memory. Provides `memory_store`, `memory_search`, `memory_forget`,
+and `memory_status` as native tool calls. Includes auto-recall (injects relevant memories before
+each turn) and optional auto-capture. This is the best experience.
 
+**Option 2: CLI fallback** — use `ctxovrflw` commands via shell
+
+If the plugin isn't installed, you can still access ctxovrflw through its CLI:
 ```bash
-# Knowledge graph (Pro)
-mcporter call ctxovrflw.add_entity name="thing" type="project"
-mcporter call ctxovrflw.add_relation source="A" source_type="project" target="B" target_type="service" relation="depends_on"
-mcporter call ctxovrflw.traverse entity="thing" max_depth=2
-mcporter call ctxovrflw.get_relations entity="thing"
-mcporter call ctxovrflw.search_entities query="name" type="project"
-
-# Consolidation (Pro)
-mcporter call ctxovrflw.consolidate subject="user"
-
-# Webhooks
-mcporter call ctxovrflw.manage_webhooks action="list"
-
-# Status
-mcporter call ctxovrflw.status
+ctxovrflw remember "fact to store"           # Store a memory
+ctxovrflw recall "search query"              # Search memories
+ctxovrflw memories                           # Interactive memory browser (TUI)
+ctxovrflw status                             # Daemon status
+ctxovrflw graph build                        # Build knowledge graph (Pro)
+ctxovrflw graph stats                        # Graph statistics (Pro)
 ```
 
-Config is at `config/mcporter.json` (already configured, server: `http://127.0.0.1:7437/mcp/sse`).
-
-**Fallback: curl** (if mcporter unavailable):
-```bash
-BASE="http://127.0.0.1:7437"
-
-# Remember
-curl -s -X POST "$BASE/v1/memories" -H "Content-Type: application/json" \
-  -d '{"content":"fact","type":"semantic","tags":["tag"],"subject":"entity"}'
-
-# Recall
-curl -s "$BASE/v1/search" -H "Content-Type: application/json" \
-  -d '{"query":"search query","limit":5}'
-
-# Forget
-curl -s -X DELETE "$BASE/v1/memories/<uuid>"
-
-# Status
-curl -s "$BASE/health"
-```
+**Setup:** Run `ctxovrflw init` — it detects OpenClaw and offers three integration paths:
+1. **Plugin + Skill + Agent Rules** (recommended) — full integration
+2. **Plugin only** — just the memory tools, no skill or agent rules
+3. **Skill + Agent Rules only** — CLI-based access without the plugin
 
 ### On session start
 Call `recall` with a broad query about the current project or topic. Load context before responding.
@@ -1072,7 +1050,7 @@ Lookups are local, fast, and free (local SQLite + ONNX, no API calls). When in d
 
 ### Learn from corrections
 When the user corrects you, ALWAYS store the correction:
-- Use `memory_store` (if plugin installed) or `mcporter call ctxovrflw.remember content="User corrected: X not Y because Z" type=preference tags='["correction"]' subject=user`
+- Use `memory_store` (if plugin installed) or run `ctxovrflw remember "User corrected: X not Y because Z"` via shell
 - Tag corrections with `correction` so they surface on future recalls
 - If the user says "I already told you" — recall the topic immediately, store the correction, don't repeat the mistake
 

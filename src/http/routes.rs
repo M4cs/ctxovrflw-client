@@ -24,7 +24,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/subjects", get(subjects))
         .route("/v1/status", get(status));
 
-    #[cfg(feature = "pro")]
+    // Knowledge graph routes (Standard+ tier, always compiled)
     let r = r
         .route("/v1/entities", get(list_entities_http))
         .route("/v1/entities", post(create_entity))
@@ -33,7 +33,11 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/relations", post(create_relation))
         .route("/v1/relations/{entity_id}", get(get_relations_http))
         .route("/v1/relations/{id}/delete", delete(delete_relation_http))
-        .route("/v1/graph/traverse/{entity_id}", get(traverse_http))
+        .route("/v1/graph/traverse/{entity_id}", get(traverse_http));
+
+    // Webhook routes (Pro tier only)
+    #[cfg(feature = "pro")]
+    let r = r
         .route("/v1/webhooks", get(list_webhooks))
         .route("/v1/webhooks", post(create_webhook))
         .route("/v1/webhooks/{id}", delete(delete_webhook));
@@ -453,10 +457,9 @@ async fn status() -> Json<Value> {
     }))
 }
 
-// ── Knowledge Graph + Webhook routes (Pro tier) ─────────────
+// ── Knowledge Graph routes (Standard+ tier) ─────────────
 
-#[cfg(feature = "pro")]
-mod pro_routes {
+mod graph_routes {
     use super::*;
 
     #[derive(Deserialize)]
@@ -479,7 +482,7 @@ mod pro_routes {
         };
         match db::graph::upsert_entity(&conn, &body.name, &body.entity_type, body.metadata.as_ref()) {
             Ok(entity) => {
-                crate::webhooks::fire("entity.created", json!({ "entity": entity }));
+                { #[cfg(feature = "pro")] crate::webhooks::fire("entity.created", json!({ "entity": entity })); }
                 Json(json!({ "ok": true, "entity": entity }))
             }
             Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
@@ -541,7 +544,7 @@ mod pro_routes {
         };
         match db::graph::delete_entity(&conn, &id) {
             Ok(true) => {
-                crate::webhooks::fire("entity.deleted", json!({ "entity_id": id }));
+                { #[cfg(feature = "pro")] crate::webhooks::fire("entity.deleted", json!({ "entity_id": id })); }
                 Json(json!({ "ok": true }))
             }
             Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
@@ -581,7 +584,7 @@ mod pro_routes {
             body.metadata.as_ref(),
         ) {
             Ok(relation) => {
-                crate::webhooks::fire("relation.created", json!({ "relation": relation }));
+                { #[cfg(feature = "pro")] crate::webhooks::fire("relation.created", json!({ "relation": relation })); }
                 Json(json!({ "ok": true, "relation": relation }))
             }
             Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
@@ -625,7 +628,7 @@ mod pro_routes {
         };
         match db::graph::delete_relation(&conn, &id) {
             Ok(true) => {
-                crate::webhooks::fire("relation.deleted", json!({ "relation_id": id }));
+                { #[cfg(feature = "pro")] crate::webhooks::fire("relation.deleted", json!({ "relation_id": id })); }
                 Json(json!({ "ok": true }))
             }
             Ok(false) => Json(json!({ "ok": false, "error": "Not found" })),
@@ -657,6 +660,15 @@ mod pro_routes {
             Err(e) => Json(json!({ "ok": false, "error": sanitize_error(&e) })),
         }
     }
+}
+
+use graph_routes::*;
+
+// ── Webhook routes (Pro tier) ─────────────
+
+#[cfg(feature = "pro")]
+mod pro_routes {
+    use super::*;
 
     pub async fn list_webhooks() -> Json<Value> {
         let conn = match db::open() {

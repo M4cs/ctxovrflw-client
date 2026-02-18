@@ -147,12 +147,11 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
         }),
     ];
 
-    // ── Knowledge Graph tools (Pro tier) ──
-    #[cfg(feature = "pro")]
-    if matches!(cfg.tier, Tier::Pro) {
+    // ── Knowledge Graph tools (Standard+ tier) ──
+    if matches!(cfg.tier, Tier::Standard | Tier::Pro) {
         tools.push(json!({
             "name": "add_entity",
-            "description": "Add an entity to the knowledge graph. Entities represent people, projects, services, concepts, etc. If an entity with the same name+type already exists, its metadata is updated.\n\n**Call this proactively** when you encounter named things worth tracking: people, repos, services, APIs, tools, companies, concepts.\n\nPro tier only.",
+            "description": "Add an entity to the knowledge graph. Entities represent people, projects, services, concepts, etc. If an entity with the same name+type already exists, its metadata is updated.\n\n**Call this proactively** when you encounter named things worth tracking: people, repos, services, APIs, tools, companies, concepts.\n\nStandard+ tier.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -176,7 +175,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
 
         tools.push(json!({
             "name": "add_relation",
-            "description": "Add a relationship between two entities in the knowledge graph. If the relation already exists, updates confidence.\n\n**Call this when you learn how things connect:** service A depends on B, person X owns project Y, tool Z reads from API W.\n\nEntities are resolved by name+type. If they don't exist yet, create them first with add_entity.\n\nPro tier only.",
+            "description": "Add a relationship between two entities in the knowledge graph. If the relation already exists, updates confidence.\n\n**Call this when you learn how things connect:** service A depends on B, person X owns project Y, tool Z reads from API W.\n\nEntities are resolved by name+type. If they don't exist yet, create them first with add_entity.\n\nStandard+ tier.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -214,7 +213,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
 
         tools.push(json!({
             "name": "get_relations",
-            "description": "Query relationships for an entity. Returns all connections (incoming and outgoing).\n\nUse this to understand how things connect: 'what does auth-service depend on?', 'who owns this project?', 'what uses PostgreSQL?'\n\nPro tier only.",
+            "description": "Query relationships for an entity. Returns all connections (incoming and outgoing).\n\nUse this to understand how things connect: 'what does auth-service depend on?', 'who owns this project?', 'what uses PostgreSQL?'\n\nStandard+ tier.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -243,7 +242,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
 
         tools.push(json!({
             "name": "traverse",
-            "description": "Traverse the knowledge graph from an entity up to N hops. Returns all reachable entities with the path taken.\n\nUse for impact analysis: 'what would break if I change this DB schema?' or discovery: 'show me everything connected to this project within 2 hops'.\n\nPro tier only.",
+            "description": "Traverse the knowledge graph from an entity up to N hops. Returns all reachable entities with the path taken.\n\nUse for impact analysis: 'what would break if I change this DB schema?' or discovery: 'show me everything connected to this project within 2 hops'.\n\nStandard+ tier.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -276,7 +275,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
 
         tools.push(json!({
             "name": "list_entities",
-            "description": "List all entities in the knowledge graph, optionally filtered by type.\n\nPro tier only.",
+            "description": "List all entities in the knowledge graph, optionally filtered by type.\n\nStandard+ tier.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -299,7 +298,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
 
         tools.push(json!({
             "name": "delete_entity",
-            "description": "Delete an entity and all its relations from the knowledge graph.\n\nPro tier only.",
+            "description": "Delete an entity and all its relations from the knowledge graph.\n\nStandard+ tier.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -318,7 +317,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
 
         tools.push(json!({
             "name": "delete_relation",
-            "description": "Delete a specific relation by ID.\n\nPro tier only.",
+            "description": "Delete a specific relation by ID.\n\nStandard+ tier.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -440,17 +439,24 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
     let tool_name = params["name"].as_str().unwrap_or("");
     let arguments = &params["arguments"];
 
-    // Pro-tier tools dispatched first when feature is enabled
+    // Knowledge graph tools (Standard+ tier, runtime check)
+    if cfg.tier.knowledge_graph_enabled() {
+        match tool_name {
+            "add_entity" => return handle_add_entity(arguments).await,
+            "add_relation" => return handle_add_relation(arguments).await,
+            "get_relations" => return handle_get_relations(arguments).await,
+            "traverse" => return handle_traverse(arguments).await,
+            "list_entities" => return handle_list_entities(arguments).await,
+            "delete_entity" => return handle_delete_entity(arguments).await,
+            "delete_relation" => return handle_delete_relation(arguments).await,
+            _ => {}
+        }
+    }
+
+    // Pro-tier tools dispatched when feature is enabled
     #[cfg(feature = "pro")]
     match tool_name {
         "context" => return handle_context(cfg, arguments).await,
-        "add_entity" => return handle_add_entity(arguments).await,
-        "add_relation" => return handle_add_relation(arguments).await,
-        "get_relations" => return handle_get_relations(arguments).await,
-        "traverse" => return handle_traverse(arguments).await,
-        "list_entities" => return handle_list_entities(arguments).await,
-        "delete_entity" => return handle_delete_entity(arguments).await,
-        "delete_relation" => return handle_delete_relation(arguments).await,
         "manage_webhooks" => return handle_manage_webhooks(arguments).await,
         "consolidate" => return handle_consolidate(cfg, arguments).await,
         _ => {}
@@ -575,9 +581,8 @@ async fn handle_remember(cfg: &Config, args: &Value) -> Result<Value> {
 
     { #[cfg(feature = "pro")] crate::webhooks::fire("memory.created", json!({ "memory": memory })); }
 
-    // Auto-extract entities from memory into knowledge graph (Pro only, best-effort)
-    #[cfg(feature = "pro")]
-    if matches!(cfg.tier, Tier::Pro) {
+    // Auto-extract entities from memory into knowledge graph (Standard+ tier, best-effort)
+    if cfg.tier.knowledge_graph_enabled() {
         let _ = auto_extract_graph_from_memory(&conn, &memory);
     }
 
@@ -719,8 +724,7 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     }
 
     // Graph-boosted results: find memories related via knowledge graph entities
-    #[cfg(feature = "pro")]
-    let results = if matches!(cfg.tier, Tier::Pro) {
+    let results = if cfg.tier.knowledge_graph_enabled() {
         let mut results = results;
         let result_ids: std::collections::HashSet<String> = results.iter().map(|(m, _)| m.id.clone()).collect();
         if let Ok(entities) = db::graph::search_entities(&conn, query, None, 3) {
@@ -763,8 +767,7 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     }
 
     // Graph context: enrich results with entity relationships
-    #[cfg(feature = "pro")]
-    if matches!(cfg.tier, Tier::Pro) {
+    if cfg.tier.knowledge_graph_enabled() {
         let mut seen_entities: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut graph_lines: Vec<String> = Vec::new();
         for (memory, _) in &results {
@@ -1155,9 +1158,8 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
     }))
 }
 
-// ── Knowledge Graph handlers (Pro tier) ─────────────────────
+// ── Knowledge Graph handlers (Standard+ tier) ─────────────────────
 
-#[cfg(feature = "pro")]
 async fn handle_add_entity(args: &Value) -> Result<Value> {
     let name = args["name"]
         .as_str()
@@ -1170,9 +1172,7 @@ async fn handle_add_entity(args: &Value) -> Result<Value> {
     let conn = db::open()?;
     let entity = db::graph::upsert_entity(&conn, name, entity_type, metadata)?;
 
-    crate::webhooks::fire("entity.created", json!({
-        "entity": entity,
-    }));
+    { #[cfg(feature = "pro")] crate::webhooks::fire("entity.created", json!({ "entity": entity })); }
 
     Ok(json!({
         "content": [{
@@ -1182,7 +1182,6 @@ async fn handle_add_entity(args: &Value) -> Result<Value> {
     }))
 }
 
-#[cfg(feature = "pro")]
 async fn handle_add_relation(args: &Value) -> Result<Value> {
     let source_name = args["source"]
         .as_str()
@@ -1213,11 +1212,7 @@ async fn handle_add_relation(args: &Value) -> Result<Value> {
         None,
     )?;
 
-    crate::webhooks::fire("relation.created", json!({
-        "relation": relation,
-        "source": source,
-        "target": target,
-    }));
+    { #[cfg(feature = "pro")] crate::webhooks::fire("relation.created", json!({ "relation": relation, "source": source, "target": target })); }
 
     Ok(json!({
         "content": [{
@@ -1233,7 +1228,6 @@ async fn handle_add_relation(args: &Value) -> Result<Value> {
     }))
 }
 
-#[cfg(feature = "pro")]
 async fn handle_get_relations(args: &Value) -> Result<Value> {
     let entity_name = args["entity"]
         .as_str()
@@ -1285,7 +1279,6 @@ async fn handle_get_relations(args: &Value) -> Result<Value> {
     }))
 }
 
-#[cfg(feature = "pro")]
 async fn handle_traverse(args: &Value) -> Result<Value> {
     let entity_name = args["entity"]
         .as_str()
@@ -1372,7 +1365,6 @@ async fn handle_traverse(args: &Value) -> Result<Value> {
     }))
 }
 
-#[cfg(feature = "pro")]
 async fn handle_list_entities(args: &Value) -> Result<Value> {
     let entity_type = args["type"].as_str();
     let query = args["query"].as_str();
@@ -1405,7 +1397,6 @@ async fn handle_list_entities(args: &Value) -> Result<Value> {
     }))
 }
 
-#[cfg(feature = "pro")]
 async fn handle_delete_entity(args: &Value) -> Result<Value> {
     let entity_name = args["entity"]
         .as_str()
@@ -1427,11 +1418,7 @@ async fn handle_delete_entity(args: &Value) -> Result<Value> {
     let entity = &entities[0];
     db::graph::delete_entity(&conn, &entity.id)?;
 
-    crate::webhooks::fire("entity.deleted", json!({
-        "entity_id": entity.id,
-        "name": entity.name,
-        "type": entity.entity_type,
-    }));
+    { #[cfg(feature = "pro")] crate::webhooks::fire("entity.deleted", json!({ "entity_id": entity.id, "name": entity.name, "type": entity.entity_type })); }
 
     Ok(json!({
         "content": [{
@@ -1441,7 +1428,6 @@ async fn handle_delete_entity(args: &Value) -> Result<Value> {
     }))
 }
 
-#[cfg(feature = "pro")]
 async fn handle_delete_relation(args: &Value) -> Result<Value> {
     let id = args["id"]
         .as_str()
@@ -1451,7 +1437,7 @@ async fn handle_delete_relation(args: &Value) -> Result<Value> {
     let deleted = db::graph::delete_relation(&conn, id)?;
 
     if deleted {
-        crate::webhooks::fire("relation.deleted", json!({ "relation_id": id }));
+        { #[cfg(feature = "pro")] crate::webhooks::fire("relation.deleted", json!({ "relation_id": id })); }
         Ok(json!({
             "content": [{ "type": "text", "text": format!("Deleted relation {id}.") }]
         }))
@@ -1616,7 +1602,6 @@ async fn handle_consolidate(cfg: &Config, args: &Value) -> Result<Value> {
 
 /// Auto-extract entities from a memory into the knowledge graph.
 /// Best-effort: errors are silently ignored.
-#[cfg(feature = "pro")]
 fn auto_extract_graph_from_memory(conn: &rusqlite::Connection, memory: &db::memories::Memory) -> Result<()> {
     use db::graph::upsert_entity;
 
