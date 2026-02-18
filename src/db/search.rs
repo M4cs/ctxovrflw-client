@@ -68,6 +68,24 @@ fn sanitize_fts_query(query: &str) -> String {
     tokens.join(" OR ")
 }
 
+
+fn pinned_policy_boost(tags: &[String], subject: &Option<String>) -> f64 {
+    let mut boost: f64 = 0.0;
+    for t in tags {
+        let tl = t.to_lowercase();
+        if tl == "pinned" || tl == "policy" || tl == "critical" || tl == "workflow" {
+            boost += 0.08;
+        }
+    }
+    if let Some(subj) = subject {
+        let sl = subj.to_lowercase();
+        if sl == "user" || sl.starts_with("project:") {
+            boost += 0.02;
+        }
+    }
+    boost.min(0.20)
+}
+
 /// Keyword search via FTS5 (free tier)
 pub fn keyword_search(conn: &Connection, query: &str, limit: usize) -> Result<Vec<(Memory, f64)>> {
     let sanitized = sanitize_fts_query(query);
@@ -82,7 +100,7 @@ pub fn keyword_search(conn: &Connection, query: &str, limit: usize) -> Result<Ve
          LIMIT ?2",
     )?;
 
-    let results = stmt
+    let mut results = stmt
         .query_map(params![sanitized, limit], |row| {
             let rank: f64 = row.get(10)?;
             Ok((
@@ -106,6 +124,11 @@ pub fn keyword_search(conn: &Connection, query: &str, limit: usize) -> Result<Ve
         })?
         .collect::<std::result::Result<Vec<_>, _>>()?;
 
+    for (mem, score) in &mut results {
+        *score += pinned_policy_boost(&mem.tags, &mem.subject);
+    }
+
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     Ok(results)
 }
 
@@ -230,7 +253,7 @@ pub fn semantic_search(
         .collect::<std::result::Result<Vec<_>, _>>()?
         .into_iter()
         .map(|(mem, score)| {
-            let adjusted = (score - quality_penalty(&mem.content)).clamp(-1.0, 1.0);
+            let adjusted = (score - quality_penalty(&mem.content) + pinned_policy_boost(&mem.tags, &mem.subject)).clamp(-1.0, 1.0);
             (mem, adjusted)
         })
         .collect();

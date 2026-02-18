@@ -454,6 +454,17 @@ Call `recall` with a broad query about the current project or topic. Load contex
 - Before suggesting an approach — check if there's a stated preference
 - The user references something discussed in another tool
 
+### Memory preflight before actions (critical)
+Before executing high-impact actions, run targeted recall first:
+- Deploy / release / tag / push / migration / update
+- Production config changes, auth/security changes, data deletion
+- External side effects (webhooks, notifications, public actions)
+
+Preflight query examples:
+- `recall("deployment workflow and post-deploy checklist")`
+- `recall("project constraints and do-not-do rules")`
+- `recall("user preferences for release process")`
+
 ### Knowledge Graph (Pro tier)
 If available, build the knowledge graph as you work:
 - Call `add_entity` when you encounter named things: services, people, projects, tools, APIs, files
@@ -474,6 +485,7 @@ Use `manage_webhooks` to set up event notifications. Users can subscribe to memo
 - Store atomic facts, not paragraphs
 - Use the `subject` field to tag who/what the memory is about
 - Recall before answering questions about preferences, setup, or history
+- Before deploy/release/push/update/destructive actions, run targeted recall preflight first
 - Never store secrets (passwords, API keys, tokens)
 "#
 }
@@ -1029,6 +1041,17 @@ Call `recall` with a broad query about the current project or topic. Load contex
 - Before suggesting an approach — check if there's a stated preference
 - The user references something discussed in another tool
 
+### Memory preflight before actions (critical)
+Before executing high-impact actions, run targeted recall first:
+- Deploy / release / tag / push / migration / update
+- Production config changes, auth/security changes, data deletion
+- External side effects (webhooks, notifications, public actions)
+
+Preflight query examples:
+- `recall("deployment workflow and post-deploy checklist")`
+- `recall("project constraints and do-not-do rules")`
+- `recall("user preferences for release process")`
+
 ### Knowledge Graph (Pro tier)
 If available, build the knowledge graph as you work:
 - Call `add_entity` when you encounter named things: services, people, projects, tools, APIs, files
@@ -1066,6 +1089,7 @@ When the user corrects you, ALWAYS store the correction:
 - Store atomic facts, not paragraphs
 - Use the `subject` field to tag who/what the memory is about
 - Recall before answering questions about preferences, setup, or history
+- Before deploy/release/push/update/destructive actions, run targeted recall preflight first
 - Never store secrets (passwords, API keys, tokens)
 "#;
 

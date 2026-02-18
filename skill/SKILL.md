@@ -19,7 +19,7 @@ You have access to **ctxovrflw**, a shared memory layer that persists across ses
 accessible by every AI tool the user runs (Cursor, Claude Code, Cline, Windsurf, etc.).
 
 You interact with it via the MCP tools: `remember`, `recall`, `forget`, `status`, `consolidate`,
-`add_entity`, `add_relation`, `traverse`, `get_relations`, `subjects`, and `manage_webhooks`.
+`maintenance`, `add_entity`, `add_relation`, `traverse`, `get_relations`, `subjects`, and `manage_webhooks`.
 
 ## ⚠️ Prerequisites — ctxovrflw Must Be Installed & Running
 
@@ -81,8 +81,8 @@ ctxovrflw update   # Downloads and installs the latest version
 | Cloud sync (E2E encrypted) | ❌ | ✅ | ✅ |
 | Context synthesis | ❌ | ❌ | ✅ |
 | Consolidation | ❌ | ❌ | ✅ |
-| Knowledge graph | ❌ | ❌ | ✅ |
-| Webhooks | ✅ | ✅ | ✅ |
+| Knowledge graph | ❌ | ✅ | ✅ |
+| Webhooks | ❌ | ❌ | ✅ |
 
 ### How to Subscribe
 
@@ -128,6 +128,23 @@ recall("project setup and conventions")
 recall("deployment preferences")
 recall("coding style preferences")
 recall("what stack are we using")
+```
+
+## Memory Preflight Before High-Impact Actions (required)
+
+Before you execute high-impact actions, run targeted recall first.
+
+High-impact actions include:
+- Deploy/release/tag/push/update workflows
+- Production config/auth/security changes
+- Data deletion or destructive migrations
+- External side effects (public posts, notifications, webhooks)
+
+Preflight recall examples:
+```
+recall("deployment workflow and post-deploy checklist")
+recall("project constraints and do-not-do rules")
+recall("release preferences and CI steps")
 ```
 
 ## When to REMEMBER (store memory)

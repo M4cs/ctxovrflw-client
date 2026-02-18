@@ -145,6 +145,31 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
                 "properties": {}
             }
         }),
+
+        json!({
+            "name": "pin_memory",
+            "description": "Pin a memory so it gets prioritized during future recalls and preflight checks. Adds tags like 'pinned' and optional policy/workflow tags.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Memory ID to pin" },
+                    "policy": { "type": "boolean", "description": "Also mark as policy memory", "default": false },
+                    "workflow": { "type": "boolean", "description": "Also mark as workflow memory", "default": false }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "unpin_memory",
+            "description": "Remove pin/policy/workflow tags from a memory so it is no longer prioritized.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Memory ID to unpin" }
+                },
+                "required": ["id"]
+            }
+        }),
     ];
 
     // ── Knowledge Graph tools (Standard+ tier) ──
@@ -486,6 +511,8 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
         "update_memory" => handle_update_memory(cfg, arguments).await,
         "status" => handle_status(cfg).await,
         "subjects" => handle_subjects().await,
+        "pin_memory" => handle_pin_memory(cfg, arguments).await,
+        "unpin_memory" => handle_unpin_memory(cfg, arguments).await,
         _ => Ok(json!({
             "content": [{ "type": "text", "text": format!("Unknown tool: {tool_name}") }],
             "isError": true
@@ -900,6 +927,66 @@ async fn handle_forget(_cfg: &Config, args: &Value) -> Result<Value> {
     Ok(json!({
         "content": [{ "type": "text", "text": msg }]
     }))
+}
+
+
+async fn handle_pin_memory(cfg: &Config, args: &Value) -> Result<Value> {
+    let id = args["id"].as_str().ok_or_else(|| anyhow::anyhow!("id is required"))?;
+    let policy = args["policy"].as_bool().unwrap_or(false);
+    let workflow = args["workflow"].as_bool().unwrap_or(false);
+
+    let conn = db::open()?;
+    let existing = match db::memories::get(&conn, id)? {
+        Some(m) => m,
+        None => return Ok(json!({ "content": [{ "type": "text", "text": format!("Memory {id} not found.") }], "isError": true })),
+    };
+
+    let mut tags = existing.tags.clone();
+    for t in ["pinned", if policy { "policy" } else { "" }, if workflow { "workflow" } else { "" }] {
+        if !t.is_empty() && !tags.iter().any(|x| x == t) {
+            tags.push(t.to_string());
+        }
+    }
+
+    let tags = validate_tags(&tags).unwrap_or(tags);
+    let updated = db::memories::update(&conn, id, None, Some(&tags), None, None, None)?;
+    match updated {
+        Some(mem) => {
+            if cfg.is_logged_in() {
+                let mid = mem.id.clone();
+                let cfg2 = cfg.clone();
+                tokio::spawn(async move { let _ = crate::sync::push_one(&cfg2, &mid).await; });
+            }
+            Ok(json!({ "content": [{ "type": "text", "text": format!("Pinned memory {id} with tags: {}", mem.tags.join(", ")) }] }))
+        }
+        None => Ok(json!({ "content": [{ "type": "text", "text": format!("Memory {id} not found.") }], "isError": true })),
+    }
+}
+
+async fn handle_unpin_memory(cfg: &Config, args: &Value) -> Result<Value> {
+    let id = args["id"].as_str().ok_or_else(|| anyhow::anyhow!("id is required"))?;
+
+    let conn = db::open()?;
+    let existing = match db::memories::get(&conn, id)? {
+        Some(m) => m,
+        None => return Ok(json!({ "content": [{ "type": "text", "text": format!("Memory {id} not found.") }], "isError": true })),
+    };
+
+    let remove = ["pinned", "policy", "workflow", "critical"];
+    let tags: Vec<String> = existing.tags.into_iter().filter(|t| !remove.contains(&t.as_str())).collect();
+
+    let updated = db::memories::update(&conn, id, None, Some(&tags), None, None, None)?;
+    match updated {
+        Some(mem) => {
+            if cfg.is_logged_in() {
+                let mid = mem.id.clone();
+                let cfg2 = cfg.clone();
+                tokio::spawn(async move { let _ = crate::sync::push_one(&cfg2, &mid).await; });
+            }
+            Ok(json!({ "content": [{ "type": "text", "text": format!("Unpinned memory {id}.") }] }))
+        }
+        None => Ok(json!({ "content": [{ "type": "text", "text": format!("Memory {id} not found.") }], "isError": true })),
+    }
 }
 
 async fn handle_update_memory(cfg: &Config, args: &Value) -> Result<Value> {
