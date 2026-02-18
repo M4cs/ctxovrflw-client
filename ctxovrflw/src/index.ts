@@ -103,6 +103,9 @@ class CtxovrflwClient {
   }
 
   forget(id: string) { return this.req<void>("DELETE", `/v1/memories/${encodeURIComponent(id)}`); }
+  update(id: string, patch: { content?: string; tags?: string[]; subject?: string | null }) {
+    return this.req<{ ok: boolean; memory?: Memory }>("PUT", `/v1/memories/${encodeURIComponent(id)}`, patch);
+  }
   status() { return this.req<StatusResponse>("GET", "/v1/status"); }
 
   async healthy(): Promise<boolean> {
@@ -298,6 +301,58 @@ const ctxovrflwPlugin = {
       },
     } as any, { name: "memory_forget" });
 
+
+    api.registerTool({
+      name: "memory_pin",
+      label: "Memory Pin (ctxovrflw)",
+      description: "Pin a memory by ID to prioritize it in future recalls.",
+      parameters: {
+        type: "object",
+        properties: {
+          memoryId: { type: "string", description: "Memory ID to pin" },
+          policy: { type: "boolean", description: "Also add policy tag" },
+          workflow: { type: "boolean", description: "Also add workflow tag" },
+        },
+        required: ["memoryId"],
+      },
+      async execute(_id: string, params: any) {
+        const c = getClient();
+        if (!c) return textResult(SETUP_MSG);
+        try {
+          const probe = await c.recall(params.memoryId, { limit: 5 });
+          const hit = (probe.results ?? []).find((r: any) => r.memory?.id === params.memoryId);
+          if (!hit) return textResult(`Memory ${params.memoryId} not found.`);
+          const tags = Array.from(new Set([...(hit.memory.tags ?? []), "pinned", params.policy ? "policy" : "", params.workflow ? "workflow" : ""].filter(Boolean)));
+          await c.update(params.memoryId, { tags });
+          return textResult(`Pinned memory ${params.memoryId}.`, { tags });
+        } catch (err) { return textResult(`Failed to pin memory: ${err}`); }
+      },
+    } as any, { name: "memory_pin" });
+
+    api.registerTool({
+      name: "memory_unpin",
+      label: "Memory Unpin (ctxovrflw)",
+      description: "Remove pinned/policy/workflow tags from a memory.",
+      parameters: {
+        type: "object",
+        properties: { memoryId: { type: "string", description: "Memory ID to unpin" } },
+        required: ["memoryId"],
+      },
+      async execute(_id: string, params: any) {
+        const c = getClient();
+        if (!c) return textResult(SETUP_MSG);
+        try {
+          const probe = await c.recall(params.memoryId, { limit: 5 });
+          const hit = (probe.results ?? []).find((r: any) => r.memory?.id === params.memoryId);
+          if (!hit) return textResult(`Memory ${params.memoryId} not found.`);
+          const drop = new Set(["pinned", "policy", "workflow", "critical"]);
+          const tags = (hit.memory.tags ?? []).filter((t: string) => !drop.has(String(t).toLowerCase()));
+          await c.update(params.memoryId, { tags });
+          return textResult(`Unpinned memory ${params.memoryId}.`, { tags });
+        } catch (err) { return textResult(`Failed to unpin memory: ${err}`); }
+      },
+    } as any, { name: "memory_unpin" });
+
     api.registerTool({
       name: "memory_status",
       label: "Memory Status (ctxovrflw)",
@@ -455,7 +510,10 @@ const ctxovrflwPlugin = {
 
           if (cfg.telemetryEnabled && (telemetry.turns % 20 === 0 || Date.now() - telemetry.lastLogAt > 10 * 60 * 1000)) {
             telemetry.lastLogAt = Date.now();
-            api.logger.info(`memory-ctxovrflw telemetry: turns=${telemetry.turns} recalls=${telemetry.recalls} preflight=${telemetry.preflightRecalls} injected=${telemetry.injectedMemories}`);
+            const metric = `auto-recall telemetry turns=${telemetry.turns} recalls=${telemetry.recalls} preflight=${telemetry.preflightRecalls} injected=${telemetry.injectedMemories}`;
+            api.logger.info(`memory-ctxovrflw telemetry: ${metric}`);
+            // Structured telemetry snapshot in memory for longitudinal tuning.
+            c.remember(metric, { type: "episodic", tags: ["telemetry", "plugin:auto-recall"], subject: "agent:openclaw" }).catch(() => {});
           }
 
           return {
