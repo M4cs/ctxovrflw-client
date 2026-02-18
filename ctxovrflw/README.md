@@ -24,7 +24,10 @@ Replace OpenClaw's built-in memory with **ctxovrflw** — a local-first, privacy
 openclaw plugins install @ctxovrflw/memory-ctxovrflw
 ```
 
-> **Tip:** `ctxovrflw init` detects OpenClaw automatically and offers to install the plugin, skill, and agent rules for you via an interactive TUI.
+> **Tip:** `ctxovrflw init` detects OpenClaw automatically and offers three integration paths via an interactive TUI:
+> 1. **Plugin + Skill + Agent Rules** (recommended) — full integration
+> 2. **Plugin only** — just native memory tools
+> 3. **Skill + Agent Rules only** — CLI-based access without the plugin
 
 ## Configure
 

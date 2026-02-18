@@ -18,9 +18,30 @@ compatibility: Requires ctxovrflw daemon running locally (MCP server on port 743
 You have access to **ctxovrflw**, a shared memory layer that persists across sessions and is
 accessible by every AI tool the user runs (Cursor, Claude Code, Cline, Windsurf, etc.).
 
-You interact with it via the MCP tools: `remember`, `recall`, `update_memory`, `forget`, `status`,
-`consolidate`, `add_entity`, `add_relation`, `traverse`, `get_relations`, `search_entities`,
+Most AI tools interact with ctxovrflw via MCP tools: `remember`, `recall`, `update_memory`, `forget`,
+`status`, `consolidate`, `add_entity`, `add_relation`, `traverse`, `get_relations`, `search_entities`,
 `subjects`, and `manage_webhooks`.
+
+### OpenClaw Users
+
+OpenClaw uses a **plugin** (not MCP) for ctxovrflw integration. `ctxovrflw init` detects OpenClaw
+and offers three setup paths:
+
+1. **Plugin + Skill + Agent Rules** (recommended) — full integration with native memory tools
+2. **Plugin only** — installs `@ctxovrflw/memory-ctxovrflw` for native `memory_search`/`memory_store`/`memory_forget`/`memory_status`
+3. **Skill + Agent Rules only** — CLI-based access via `ctxovrflw remember`/`ctxovrflw recall`
+
+**With the plugin installed**, use `memory_search`, `memory_store`, `memory_forget`, and `memory_status`
+as native tool calls. Auto-recall injects relevant memories before each turn automatically.
+
+**Without the plugin**, use the ctxovrflw CLI via shell:
+```bash
+ctxovrflw remember "fact to store"
+ctxovrflw recall "search query"
+ctxovrflw memories    # Interactive TUI browser
+```
+
+**Manual plugin install:** `openclaw plugins install @ctxovrflw/memory-ctxovrflw`
 
 ## ⚠️ Prerequisites — ctxovrflw Must Be Installed & Running
 

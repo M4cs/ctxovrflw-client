@@ -122,13 +122,27 @@ ctxovrflw version           # Check current version
 
 ## OpenClaw Integration
 
-ctxovrflw integrates with [OpenClaw](https://openclaw.dev) via the `@ctxovrflw/memory-ctxovrflw` plugin:
+`ctxovrflw init` detects OpenClaw and offers three integration paths via an interactive TUI:
 
+| Path | What it does |
+|------|-------------|
+| **Plugin + Skill + Agent Rules** (recommended) | Installs the memory plugin, agent skill, and injects ctxovrflw instructions into AGENTS.md |
+| **Plugin only** | Installs the `@ctxovrflw/memory-ctxovrflw` plugin — native memory tools without skill/rules |
+| **Skill + Agent Rules only** | CLI-based access via `ctxovrflw` commands — no plugin needed |
+
+**Plugin install** (manual):
 ```bash
 openclaw plugins install @ctxovrflw/memory-ctxovrflw
 ```
 
-The plugin replaces OpenClaw's built-in memory with ctxovrflw's semantic search, providing `memory_search`, `memory_store`, `memory_forget`, and `memory_status` tools natively. `ctxovrflw init` detects OpenClaw and offers to install the plugin automatically.
+The plugin replaces OpenClaw's built-in memory with ctxovrflw's semantic search, providing `memory_search`, `memory_store`, `memory_forget`, and `memory_status` tools natively, plus auto-recall and optional auto-capture.
+
+**CLI access** (no plugin required):
+```bash
+ctxovrflw remember "fact to store"    # Store a memory
+ctxovrflw recall "search query"       # Search memories
+ctxovrflw memories                    # Interactive memory browser (TUI)
+```
 
 ## Tiers
 
