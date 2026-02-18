@@ -106,11 +106,49 @@ pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
         }
     });
 
+    // Background consolidation task (Pro feature)
+    let consolidation_handle = if cfg.feature_enabled("consolidation") && cfg.auto_consolidation {
+        let interval_secs = cfg.consolidation_interval_secs.max(300);
+        tracing::info!("Auto-consolidation enabled (every {interval_secs}s)");
+        Some(tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_secs));
+            interval.tick().await; // skip first immediate tick
+            loop {
+                interval.tick().await;
+                match crate::maintenance::run_consolidation_pass() {
+                    Ok(report) => {
+                        if report.duplicates_removed > 0 {
+                            tracing::info!(
+                                "Auto-consolidation: scanned {} subjects / {} memories, removed {} duplicates",
+                                report.subjects_scanned,
+                                report.memories_scanned,
+                                report.duplicates_removed
+                            );
+                        } else {
+                            tracing::debug!(
+                                "Auto-consolidation: scanned {} subjects / {} memories, no exact duplicates",
+                                report.subjects_scanned,
+                                report.memories_scanned
+                            );
+                        }
+                    }
+                    Err(e) => tracing::warn!("Auto-consolidation failed: {e}"),
+                }
+            }
+        }))
+    } else {
+        tracing::info!("Auto-consolidation disabled");
+        None
+    };
+
     println!("ctxovrflw daemon running on port {port}");
     println!("  MCP SSE:  http://127.0.0.1:{port}/mcp/sse");
     println!("  REST API: http://127.0.0.1:{port}/v1/");
     if cfg.auto_sync && cfg.is_logged_in() {
         println!("  Sync:     every {}s", cfg.sync_interval_secs);
+    }
+    if cfg.feature_enabled("consolidation") && cfg.auto_consolidation {
+        println!("  Consolidation: every {}s", cfg.consolidation_interval_secs.max(300));
     }
     println!("  Press Ctrl+C to stop.");
 
@@ -121,6 +159,9 @@ pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
     http_handle.abort();
     cleanup_handle.abort();
     if let Some(h) = sync_handle {
+        h.abort();
+    }
+    if let Some(h) = consolidation_handle {
         h.abort();
     }
 

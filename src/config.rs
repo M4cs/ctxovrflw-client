@@ -33,6 +33,14 @@ pub struct Config {
     #[serde(default = "default_auto_sync")]
     pub auto_sync: bool,
 
+    /// Run periodic background consolidation passes (Pro tier only)
+    #[serde(default = "default_auto_consolidation")]
+    pub auto_consolidation: bool,
+
+    /// Background consolidation interval in seconds (default: 6h)
+    #[serde(default = "default_consolidation_interval")]
+    pub consolidation_interval_secs: u64,
+
     // Zero-knowledge encryption
     #[serde(default)]
     pub email: Option<String>,
@@ -140,6 +148,14 @@ fn default_sync_interval() -> u64 {
 
 fn default_auto_sync() -> bool {
     true
+}
+
+fn default_auto_consolidation() -> bool {
+    true
+}
+
+fn default_consolidation_interval() -> u64 {
+    6 * 60 * 60
 }
 
 fn default_embedding_model() -> String {
@@ -330,6 +346,8 @@ impl Default for Config {
             device_id: None,
             sync_interval_secs: default_sync_interval(),
             auto_sync: default_auto_sync(),
+            auto_consolidation: default_auto_consolidation(),
+            consolidation_interval_secs: default_consolidation_interval(),
             email: None,
             pin_verifier: None,
             key_salt: None,

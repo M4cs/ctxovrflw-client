@@ -10,6 +10,9 @@ use super::memories::Memory;
 /// Below this threshold, results are considered noise and filtered out.
 pub const MIN_SEMANTIC_SCORE: f64 = 0.15;
 
+/// Hard lower bound for adaptive thresholding (model-aware threshold never drops below this).
+const MIN_ADAPTIVE_THRESHOLD: f64 = 0.05;
+
 /// RRF constant (k=60 is standard). Higher k reduces the impact of rank position.
 #[cfg(feature = "pro")]
 const RRF_K: f64 = 60.0;
@@ -106,6 +109,79 @@ pub fn keyword_search(conn: &Connection, query: &str, limit: usize) -> Result<Ve
     Ok(results)
 }
 
+fn model_semantic_baseline() -> f64 {
+    // Light model-aware baseline tuning (can evolve into persisted calibration stats).
+    let model = crate::config::Config::load()
+        .map(|c| c.embedding_model.to_lowercase())
+        .unwrap_or_default();
+
+    if model.contains("bge-m3") || model.contains("multilingual") {
+        0.12
+    } else if model.contains("jina") || model.contains("gte") {
+        0.14
+    } else {
+        MIN_SEMANTIC_SCORE
+    }
+}
+
+fn quantile(mut values: Vec<f64>, q: f64) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let idx = ((values.len() - 1) as f64 * q.clamp(0.0, 1.0)).round() as usize;
+    values[idx]
+}
+
+fn adaptive_semantic_threshold(scores: &[f64]) -> f64 {
+    if scores.is_empty() {
+        return model_semantic_baseline().max(MIN_ADAPTIVE_THRESHOLD);
+    }
+
+    // Adaptive threshold from query-local distribution + model baseline.
+    let p25 = quantile(scores.to_vec(), 0.25);
+    let p50 = quantile(scores.to_vec(), 0.50);
+    let baseline = model_semantic_baseline();
+    let dynamic = (p25 - 0.03).min(p50 - 0.01);
+
+    dynamic
+        .max(baseline)
+        .max(MIN_ADAPTIVE_THRESHOLD)
+        .min(0.45)
+}
+
+fn quality_penalty(content: &str) -> f64 {
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return 0.15;
+    }
+
+    let mut penalty: f64 = 0.0;
+    let lowered = trimmed.to_lowercase();
+    let token_count = trimmed.split_whitespace().count();
+
+    // Very long boilerplate often dominates noisy recalls.
+    if token_count > 220 {
+        penalty += 0.08;
+    }
+    if token_count > 500 {
+        penalty += 0.10;
+    }
+
+    // Common low-signal config/prompt blobs.
+    if lowered.contains("you are") || lowered.contains("system prompt") || lowered.contains("## memory") {
+        penalty += 0.06;
+    }
+
+    // Extremely repetitive content is usually low-value retrieval noise.
+    let uniq_chars = lowered.chars().collect::<std::collections::HashSet<_>>().len();
+    if uniq_chars < 20 && lowered.len() > 120 {
+        penalty += 0.06;
+    }
+
+    penalty.min(0.25)
+}
+
 /// Semantic (vector) search via sqlite-vec (paid tiers)
 pub fn semantic_search(
     conn: &Connection,
@@ -128,7 +204,7 @@ pub fn semantic_search(
     // sqlite-vec's k parameter limits the KNN search, so we need headroom.
     let k = (limit * 4).max(20).min(200);
 
-    let results: Vec<(Memory, f64)> = stmt
+    let adjusted: Vec<(Memory, f64)> = stmt
         .query_map(params![embedding_bytes, k], |row| {
             let distance: f64 = row.get(1)?;
             let score = 1.0 - (distance * distance / 2.0);
@@ -151,13 +227,34 @@ pub fn semantic_search(
                 score,
             ))
         })?
-        .collect::<std::result::Result<Vec<_>, _>>()?;
-
-    // Filter out low-relevance results (noise)
-    let filtered: Vec<_> = results.into_iter()
-        .filter(|(_, score)| *score >= MIN_SEMANTIC_SCORE)
-        .take(limit)
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .into_iter()
+        .map(|(mem, score)| {
+            let adjusted = (score - quality_penalty(&mem.content)).clamp(-1.0, 1.0);
+            (mem, adjusted)
+        })
         .collect();
+
+    let adjusted_all = adjusted.clone();
+    let score_samples: Vec<f64> = adjusted.iter().map(|(_, s)| *s).collect();
+    let threshold = adaptive_semantic_threshold(&score_samples);
+
+    // Filter out low-relevance results (noise), then rank by adjusted score.
+    let mut filtered: Vec<_> = adjusted
+        .into_iter()
+        .filter(|(_, score)| *score >= threshold)
+        .collect();
+
+    // If adaptive threshold is too strict for a query, gracefully fall back to a looser floor.
+    if filtered.is_empty() {
+        filtered = adjusted_all
+            .into_iter()
+            .filter(|(_, score)| *score >= MIN_ADAPTIVE_THRESHOLD)
+            .collect();
+    }
+
+    filtered.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    filtered.truncate(limit);
     Ok(filtered)
 }
 
@@ -197,29 +294,47 @@ pub fn hybrid_search(
         return Ok(semantic_results.into_iter().take(limit).collect());
     }
 
-    // Build RRF scores
+    // Build weighted RRF scores (rank fusion + normalized source score blending)
     let mut scores: HashMap<String, f64> = HashMap::new();
     let mut memories: HashMap<String, Memory> = HashMap::new();
 
-    // Semantic results contribute RRF score based on their rank
-    for (rank, (mem, _score)) in semantic_results.into_iter().enumerate() {
+    const W_SEMANTIC: f64 = 0.65;
+    const W_KEYWORD: f64 = 0.45;
+    const W_SUBJECT: f64 = 0.55;
+
+    let sem_min = semantic_results.iter().map(|(_, s)| *s).fold(f64::INFINITY, f64::min);
+    let sem_max = semantic_results.iter().map(|(_, s)| *s).fold(f64::NEG_INFINITY, f64::max);
+    let kw_min = keyword_results.iter().map(|(_, s)| *s).fold(f64::INFINITY, f64::min);
+    let kw_max = keyword_results.iter().map(|(_, s)| *s).fold(f64::NEG_INFINITY, f64::max);
+
+    let normalize = |score: f64, min_v: f64, max_v: f64| -> f64 {
+        if (max_v - min_v).abs() < 1e-9 {
+            0.5
+        } else {
+            ((score - min_v) / (max_v - min_v)).clamp(0.0, 1.0)
+        }
+    };
+
+    // Semantic results contribute weighted RRF + normalized semantic strength.
+    for (rank, (mem, score)) in semantic_results.into_iter().enumerate() {
         let rrf = 1.0 / (RRF_K + rank as f64 + 1.0);
-        *scores.entry(mem.id.clone()).or_default() += rrf;
+        let sem_norm = normalize(score, sem_min, sem_max);
+        *scores.entry(mem.id.clone()).or_default() += (rrf * W_SEMANTIC) + (sem_norm * 0.20);
         memories.entry(mem.id.clone()).or_insert(mem);
     }
 
-    // Keyword results contribute RRF score based on their rank
-    for (rank, (mem, _score)) in keyword_results.into_iter().enumerate() {
+    // Keyword results contribute weighted RRF + normalized BM25-like strength.
+    for (rank, (mem, score)) in keyword_results.into_iter().enumerate() {
         let rrf = 1.0 / (RRF_K + rank as f64 + 1.0);
-        *scores.entry(mem.id.clone()).or_default() += rrf;
+        let kw_norm = normalize(score, kw_min, kw_max);
+        *scores.entry(mem.id.clone()).or_default() += (rrf * W_KEYWORD) + (kw_norm * 0.15);
         memories.entry(mem.id.clone()).or_insert(mem);
     }
 
-    // Subject/tag-match results get full RRF weight — exact metadata matches
-    // are strong relevance signals
+    // Subject/tag matches get weighted rank boost (metadata signal).
     for (rank, mem) in subject_results.into_iter().enumerate() {
         let rrf = 1.0 / (RRF_K + rank as f64 + 1.0);
-        *scores.entry(mem.id.clone()).or_default() += rrf;
+        *scores.entry(mem.id.clone()).or_default() += rrf * W_SUBJECT;
         memories.entry(mem.id.clone()).or_insert(mem);
     }
 

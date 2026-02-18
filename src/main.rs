@@ -7,6 +7,7 @@ mod db;
 mod embed;
 mod http;
 mod mcp;
+mod maintenance;
 mod sync;
 mod validation;
 #[cfg(feature = "pro")]

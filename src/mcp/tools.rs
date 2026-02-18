@@ -386,6 +386,22 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
                 }
             }
         }));
+
+        tools.push(json!({
+            "name": "maintenance",
+            "description": "Run or plan autonomous memory maintenance workflows. Use this for background consolidation orchestration and OpenClaw-aware scheduling hints.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["run_consolidation_now", "openclaw_schedule_hint"],
+                        "description": "Maintenance action"
+                    }
+                },
+                "required": ["action"]
+            }
+        }));
     }
 
     // Context synthesis only for Pro+
@@ -459,6 +475,7 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
         "context" => return handle_context(cfg, arguments).await,
         "manage_webhooks" => return handle_manage_webhooks(arguments).await,
         "consolidate" => return handle_consolidate(cfg, arguments).await,
+        "maintenance" => return handle_maintenance(cfg, arguments).await,
         _ => {}
     }
 
@@ -750,10 +767,28 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     let mut text = format!("Found memories (search: {method}):\n\n");
     let mut token_count = 0usize;
     let mut included = 0usize;
+    let min_score = results.iter().map(|(_, s)| *s).fold(f64::INFINITY, f64::min);
+    let max_score = results.iter().map(|(_, s)| *s).fold(f64::NEG_INFINITY, f64::max);
+    let score_band = (max_score - min_score).abs().max(1e-9);
+
     for (memory, score) in &results {
+        let percentile = ((*score - min_score) / score_band).clamp(0.0, 1.0);
+        let confidence = if percentile >= 0.75 {
+            "high"
+        } else if percentile >= 0.40 {
+            "medium"
+        } else {
+            "low"
+        };
+
         let line = format!(
-            "- [{}] ({}, score: {:.2}) {}{}\n",
-            memory.id, memory.memory_type, score, memory.content,
+            "- [{}] ({}, score: {:.2}, conf: {}, pct: {:.0}%) {}{}\n",
+            memory.id,
+            memory.memory_type,
+            score,
+            confidence,
+            percentile * 100.0,
+            memory.content,
             memory.subject.as_deref().map(|s| format!(" [{}]", s)).unwrap_or_default()
         );
         let line_tokens = line.len() / 4;
@@ -798,6 +833,12 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
                 text.push_str(&format!("{}\n", line));
             }
         }
+    }
+
+    #[cfg(feature = "pro")]
+    if matches!(cfg.tier, Tier::Pro) {
+        text.push_str("\n--- Pro Workflow Tip ---\n");
+        text.push_str("To keep memory quality high while working: run `maintenance` with action `run_consolidation_now` after major recall sessions, and use `maintenance` with `openclaw_schedule_hint` to set autonomous OpenClaw cron workflows.\n");
     }
 
     Ok(json!({
@@ -1529,7 +1570,52 @@ async fn handle_manage_webhooks(args: &Value) -> Result<Value> {
     }
 }
 
-// ── Consolidation handler (Pro tier) ────────────────────────
+// ── Maintenance + consolidation handlers (Pro tier) ─────────
+
+#[cfg(feature = "pro")]
+async fn handle_maintenance(cfg: &Config, args: &Value) -> Result<Value> {
+    if !cfg.feature_enabled("consolidation") {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": "Maintenance workflows require Pro tier. Upgrade at https://ctxovrflw.dev/pricing" }],
+            "isError": true
+        }));
+    }
+
+    let action = args["action"].as_str().unwrap_or("");
+    match action {
+        "run_consolidation_now" => {
+            let report = crate::maintenance::run_consolidation_pass()?;
+            Ok(json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!(
+                        "Consolidation pass complete: scanned {} subjects / {} memories, removed {} exact duplicates.",
+                        report.subjects_scanned,
+                        report.memories_scanned,
+                        report.duplicates_removed
+                    )
+                }]
+            }))
+        }
+        "openclaw_schedule_hint" => {
+            let home = std::env::var("HOME").unwrap_or_default();
+            let openclaw_workspace_exists = std::path::Path::new(&home).join(".openclaw/workspace").exists();
+            let text = if openclaw_workspace_exists {
+                "OpenClaw workspace detected. Recommended autonomous workflow:\n\n1) Create a recurring OpenClaw cron job (isolated agentTurn) every 6-12h.\n2) Agent turn prompt should call: maintenance(action=run_consolidation_now), then consolidate(subject=...) for top noisy subjects, then update_memory/forget for cleanup.\n3) Keep delivery=announce so you get concise run summaries.\n\nSuggested agent-turn prompt:\n\"Run memory maintenance for ctxovrflw: execute maintenance run_consolidation_now, then consolidate on top 3 noisy subjects, merge obvious duplicates with update_memory, remove stale duplicates with forget, and summarize changes.\""
+            } else {
+                "OpenClaw workspace not detected on this machine. Use maintenance(action=run_consolidation_now) from any connected agent after major recall sessions, or schedule equivalent periodic tasks in your orchestration platform."
+            };
+
+            Ok(json!({
+                "content": [{ "type": "text", "text": text }]
+            }))
+        }
+        _ => Ok(json!({
+            "content": [{ "type": "text", "text": "Unknown action. Use: run_consolidation_now or openclaw_schedule_hint" }],
+            "isError": true
+        })),
+    }
+}
 
 #[cfg(feature = "pro")]
 async fn handle_consolidate(cfg: &Config, args: &Value) -> Result<Value> {

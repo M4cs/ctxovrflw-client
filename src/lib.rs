@@ -5,6 +5,7 @@ pub mod db;
 pub mod embed;
 pub mod http;
 pub mod mcp;
+pub mod maintenance;
 pub mod sync;
 pub mod validation;
 #[cfg(feature = "pro")]
