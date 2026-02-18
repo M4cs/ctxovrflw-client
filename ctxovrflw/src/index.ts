@@ -43,6 +43,14 @@ type PluginConfig = {
   telemetryEnabled: boolean;
 };
 
+type PolicyRule = {
+  id: string;
+  content: string;
+  subject?: string;
+  tags: string[];
+  score: number;
+};
+
 // ============================================================================
 // Auto-discovery
 // ============================================================================
@@ -154,6 +162,33 @@ function scoreMemory(e: { memory: Memory; score: number }, highImpact: boolean):
   return (e.score ?? 0) + bonus;
 }
 
+function extractPolicyRules(entries: { memory: Memory; score: number }[]): PolicyRule[] {
+  return entries
+    .filter((e) => (e.memory.tags ?? []).some((t) => ["policy", "workflow", "critical", "correction"].includes(String(t).toLowerCase())))
+    .map((e) => ({
+      id: e.memory.id,
+      content: e.memory.content,
+      subject: e.memory.subject,
+      tags: e.memory.tags ?? [],
+      score: e.score ?? 0,
+    }));
+}
+
+function buildPolicyChecklist(prompt: string, rules: PolicyRule[]): string[] {
+  const highImpact = isHighImpactIntent(prompt);
+  const relevant = rules
+    .filter((r) => {
+      const tags = r.tags.map((t) => t.toLowerCase());
+      if (highImpact) return true;
+      return tags.includes("workflow") || tags.includes("policy");
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+
+  if (relevant.length === 0) return [];
+  return relevant.map((r, i) => `${i + 1}. ${r.content}`);
+}
+
 function escapeForPrompt(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -202,6 +237,9 @@ const ctxovrflwPlugin = {
       injectedMemories: 0,
       lastLogAt: Date.now(),
     };
+
+    // Write-through policy cache: newly stored workflow/policy memories become active immediately.
+    const policyCache = new Map<string, PolicyRule>();
 
     function getClient(): CtxovrflwClient | null {
       if (client) return client;
@@ -261,6 +299,34 @@ const ctxovrflwPlugin = {
     } as any, { name: "memory_search" });
 
     api.registerTool({
+      name: "memory_preflight",
+      label: "Memory Preflight (ctxovrflw)",
+      description: "Enforce workflow/policy memory checks before high-impact actions.",
+      parameters: {
+        type: "object",
+        properties: {
+          intent: { type: "string", description: "Action intent, e.g. deploy, release, push, delete, update" },
+          prompt: { type: "string", description: "Optional action text to classify" },
+        },
+      },
+      async execute(_id: string, params: any) {
+        const c = getClient();
+        if (!c) return textResult(SETUP_MSG);
+        try {
+          const intent = String(params.intent ?? "");
+          const prompt = String(params.prompt ?? intent);
+          const q = `${intent} workflow checklist policy required steps`;
+          const result = await c.recall(q, { limit: cfg.preflightRecallLimit });
+          const rules = extractPolicyRules(result.results ?? []);
+          for (const r of rules) policyCache.set(r.id, r);
+          const checklist = buildPolicyChecklist(prompt, [...policyCache.values(), ...rules]);
+          if (checklist.length === 0) return textResult("No policy checklist found for this intent.", { ok: true, checklist: [] });
+          return textResult(`Preflight checklist:\n${checklist.join("\n")}`, { ok: true, checklist });
+        } catch (err) { return textResult(`Preflight failed: ${err}`); }
+      },
+    } as any, { name: "memory_preflight" });
+
+    api.registerTool({
       name: "memory_store",
       label: "Memory Store (ctxovrflw)",
       description: "Store information in ctxovrflw long-term memory. Use for preferences, decisions, facts, project context.",
@@ -278,8 +344,31 @@ const ctxovrflwPlugin = {
         const c = getClient();
         if (!c) return textResult(SETUP_MSG);
         try {
-          const memory = await c.remember(params.text, { type: params.type, tags: params.tags, subject: params.subject });
-          return textResult(`Stored: "${params.text.slice(0, 100)}${params.text.length > 100 ? "..." : ""}"`, { action: "created", id: memory.id });
+          const text = String(params.text ?? "");
+          const incomingTags: string[] = Array.isArray(params.tags) ? params.tags : [];
+          const isCorrection = /\b(correct|correction|i already told you|not\s+that)\b/i.test(text);
+          const isWorkflow = /\b(deploy|release|push|ci|update|checklist|workflow)\b/i.test(text);
+          const tags = Array.from(new Set([
+            ...incomingTags,
+            isCorrection ? "correction" : "",
+            isCorrection ? "policy" : "",
+            isWorkflow ? "workflow" : "",
+          ].filter(Boolean)));
+
+          const memory = await c.remember(text, { type: params.type, tags, subject: params.subject });
+
+          // Write-through activation for policy/workflow memories
+          if (tags.some((t) => ["policy", "workflow", "critical", "correction"].includes(String(t).toLowerCase()))) {
+            policyCache.set(memory.id, {
+              id: memory.id,
+              content: memory.content,
+              subject: memory.subject,
+              tags: memory.tags,
+              score: 1,
+            });
+          }
+
+          return textResult(`Stored: "${text.slice(0, 100)}${text.length > 100 ? "..." : ""}"`, { action: "created", id: memory.id, tags });
         } catch (err) { return textResult(`Failed to store: ${err}`); }
       },
     } as any, { name: "memory_store" });
@@ -495,7 +584,16 @@ const ctxovrflwPlugin = {
             .sort((a, b) => scoreMemory(b, highImpact) - scoreMemory(a, highImpact))
             .slice(0, highImpact ? cfg.preflightRecallLimit : cfg.recallLimit);
 
-          if (ranked.length === 0) return;
+          // Continuously refresh policy cache from recalled memories
+          for (const rule of extractPolicyRules(ranked as any)) {
+            policyCache.set(rule.id, rule);
+          }
+
+          const policyChecklist = highImpact
+            ? buildPolicyChecklist(prompt, [...policyCache.values()])
+            : [];
+
+          if (ranked.length === 0 && policyChecklist.length === 0) return;
 
           telemetry.injectedMemories += ranked.length;
           api.logger.info(`memory-ctxovrflw: injecting ${ranked.length} memories (${highImpact ? "preflight" : "general"})`);
@@ -506,6 +604,9 @@ const ctxovrflwPlugin = {
           });
 
           let context = lines.join("\n");
+          if (policyChecklist.length > 0) {
+            context += `\n\n<policy-preflight>\nBefore executing this high-impact action, complete this checklist:\n${policyChecklist.join("\n")}\n</policy-preflight>`;
+          }
           if (general.graph_context) context += `\n\n${escapeForPrompt(general.graph_context)}`;
 
           if (cfg.telemetryEnabled && (telemetry.turns % 20 === 0 || Date.now() - telemetry.lastLogAt > 10 * 60 * 1000)) {
