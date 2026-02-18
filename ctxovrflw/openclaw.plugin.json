@@ -38,6 +38,21 @@
       "help": "Minimum similarity score for auto-recall (0.0-1.0)",
       "advanced": true
     },
+    "autoRecallMode": {
+      "label": "Auto-Recall Mode",
+      "help": "smart: preflight-focused recall, always: every turn",
+      "advanced": true
+    },
+    "preflightRecallLimit": {
+      "label": "Preflight Recall Limit",
+      "help": "Max memories to inject for high-impact intent preflight",
+      "advanced": true
+    },
+    "telemetryEnabled": {
+      "label": "Recall Telemetry",
+      "help": "Log aggregate recall/preflight counters",
+      "advanced": true
+    },
     "captureMaxChars": {
       "label": "Capture Max Chars",
       "advanced": true
@@ -76,6 +91,18 @@
         "type": "number",
         "minimum": 0,
         "maximum": 1
+      },
+      "autoRecallMode": {
+        "type": "string",
+        "enum": ["smart", "always"]
+      },
+      "preflightRecallLimit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 100
+      },
+      "telemetryEnabled": {
+        "type": "boolean"
       }
     }
   }
