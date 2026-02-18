@@ -48,9 +48,12 @@ Add to your OpenClaw config:
           daemonUrl: "http://127.0.0.1:7437",  // default
           agentId: "openclaw",                   // default
           autoRecall: true,                      // default
+          autoRecallMode: "smart",              // smart|always (default: smart)
           autoCapture: false,                    // default
           recallLimit: 5,                        // default
+          preflightRecallLimit: 8,               // default (high-impact preflight turns)
           recallMinScore: 0.3,                   // default
+          telemetryEnabled: true,                // default (structured auto-recall telemetry)
           captureMaxChars: 500,                  // default
         }
       }
@@ -69,7 +72,7 @@ openclaw gateway restart
 
 ### Auto-Recall (default: on)
 
-Before each agent turn, the plugin searches ctxovrflw for memories relevant to the user's message and injects them as context. The agent sees these automatically — no tool call needed.
+Before each agent turn, the plugin searches ctxovrflw for relevant memories and injects them as context. In `autoRecallMode: "smart"`, high-impact prompts (deploy/release/auth/security/delete/public side effects) trigger a broader preflight recall sweep. Use `"always"` to apply broad recall every turn.
 
 ### Auto-Capture (default: off)
 
@@ -82,6 +85,8 @@ The agent can also use tools explicitly:
 - `memory_search` — Semantic search with optional subject filter
 - `memory_store` — Store new memories with type, tags, subject
 - `memory_forget` — Delete a memory by ID
+- `memory_pin` — Pin/prioritize a memory (supports policy/workflow tags)
+- `memory_unpin` — Remove pin/policy/workflow priority tags
 - `memory_status` — Check daemon status, memory count, tier
 
 ### CLI

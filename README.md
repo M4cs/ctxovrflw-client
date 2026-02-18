@@ -53,6 +53,7 @@ Any MCP-compatible agent works out of the box.
 - **Semantic search** — finds memories by meaning, not just keywords (local ONNX embeddings)
 - **MCP native** — speaks Model Context Protocol, zero custom integration
 - **Memory expiry** — set TTL on temporary context (`"ttl": "24h"`)
+- **Long-memory chunking** — large memories are split into linked chunks for reliable embedding/recall
 - **E2E encrypted sync** — optional cross-device sync, zero-knowledge encryption
 - **Sub-millisecond queries** — SQLite + sqlite-vec, no network latency
 - **Single binary** — written in Rust, ~15MB, runs as a lightweight daemon
@@ -67,11 +68,14 @@ Any MCP-compatible agent works out of the box.
 | `update_memory` | Update content, tags, subject, or expiry on existing memories |
 | `forget` | Delete a memory (with dry-run preview) |
 | `subjects` | List all known entities and memory counts |
-| `consolidate` | Deduplicate and clean up memories for a subject (Pro) |
+| `consolidate` | Review duplicate/related memories for consolidation candidates (Pro) |
+| `maintenance` | Run maintenance workflows (`run_consolidation_now`, `openclaw_schedule_hint`) (Pro) |
 | `context` | Synthesized context briefing (Pro) |
 | `status` | Check tier, usage, and feature availability |
-| `manage_webhooks` | Create, list, and delete webhook subscriptions |
-| **Knowledge Graph (Pro)** | |
+| `manage_webhooks` | Create, list, and delete webhook subscriptions (Pro) |
+| `pin_memory` | Pin memory for higher recall priority (adds `pinned`/optional policy/workflow tags) |
+| `unpin_memory` | Remove pin/policy/workflow priority tags |
+| **Knowledge Graph (Standard+)** | |
 | `add_entity` | Add a named entity with type and metadata |
 | `add_relation` | Create a relationship between two entities |
 | `traverse` | Walk the graph from an entity up to N hops |
@@ -154,9 +158,10 @@ ctxovrflw memories                    # Interactive memory browser (TUI)
 | **Semantic search** | ✓ | ✓ | ✓ |
 | **Hybrid search (RRF)** | ✓ | ✓ | ✓ (boosted) |
 | **Cloud sync** | — | ✓ (E2E encrypted) | ✓ (E2E encrypted) |
-| **Knowledge graph** | — | — | ✓ |
+| **Knowledge graph** | — | ✓ | ✓ |
 | **Consolidation** | — | — | ✓ |
 | **Context synthesis** | — | — | ✓ |
+| **Webhooks** | — | — | ✓ |
 
 ## Source Available
 
