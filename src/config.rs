@@ -33,7 +33,7 @@ pub struct Config {
     #[serde(default = "default_auto_sync")]
     pub auto_sync: bool,
 
-    /// Run periodic background consolidation passes (Pro tier only)
+    /// Run periodic background consolidation passes (Pro tier)
     #[serde(default = "default_auto_consolidation")]
     pub auto_consolidation: bool,
 
@@ -289,7 +289,7 @@ impl Config {
         match feature {
             "hybrid_search" => self.tier.cloud_sync_enabled(), // standard+
             "knowledge_graph" => self.tier.knowledge_graph_enabled(),
-            "webhooks" => matches!(self.tier, Tier::Pro),
+            "webhooks" => matches!(self.tier, Tier::Standard | Tier::Pro),
             "consolidation" => self.tier.consolidation_enabled(),
             "context_synthesis" => self.tier.context_synthesis_enabled(),
             _ => false,

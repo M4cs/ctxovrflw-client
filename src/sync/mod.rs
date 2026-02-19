@@ -1,7 +1,3 @@
-// TODO: Add sync support for knowledge graph tables (entities, relations).
-// These currently only exist locally. Need push/pull for entities and relations
-// similar to how memories are synced, with conflict resolution on upsert.
-
 use anyhow::Result;
 use serde::Deserialize;
 

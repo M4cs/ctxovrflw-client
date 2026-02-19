@@ -1668,7 +1668,30 @@ async fn download_ort_runtime() -> Result<std::path::PathBuf> {
             std::fs::copy(&lib_in_archive, &dest_path)?;
         }
     } else {
-        anyhow::bail!("ZIP extraction not yet implemented for Windows ORT download");
+        // Windows: extract from ZIP archive
+        let zip_path = tmp_dir.path().join(format!("{archive_name}.zip"));
+        std::fs::write(&zip_path, &bytes)?;
+
+        let file = std::fs::File::open(&zip_path)?;
+        let mut archive = zip::ZipArchive::new(file)?;
+
+        // Find and extract the DLL from the archive
+        let lib_in_archive = format!("{archive_name}/lib/{lib_name}");
+        let mut found = false;
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)?;
+            let name = file.name();
+            if name == lib_in_archive || name.ends_with(&format!("/lib/{lib_name}")) {
+                let mut out_file = std::fs::File::create(&dest_path)?;
+                std::io::copy(&mut file, &mut out_file)?;
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            anyhow::bail!("Could not find {} in downloaded ZIP archive", lib_name);
+        }
     }
 
     Ok(dest_path)

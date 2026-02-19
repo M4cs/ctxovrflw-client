@@ -360,7 +360,7 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
         }));
     }
 
-    // ── Webhook tools (Pro tier) ──
+    // ── Webhook tools (Standard + Pro tier) ──
     #[cfg(feature = "pro")]
     tools.push(json!({
         "name": "manage_webhooks",
@@ -1628,7 +1628,7 @@ async fn handle_delete_relation(args: &Value) -> Result<Value> {
     }
 }
 
-// ── Webhook handler (Pro tier) ───────────────────────────────
+// ── Webhook handler (Standard + Pro tier) ────────────────────
 
 #[cfg(feature = "pro")]
 async fn handle_manage_webhooks(args: &Value) -> Result<Value> {

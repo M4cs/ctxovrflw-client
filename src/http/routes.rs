@@ -39,7 +39,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/relations/{id}/delete", delete(delete_relation_http))
         .route("/v1/graph/traverse/{entity_id}", get(traverse_http));
 
-    // Webhook routes (Pro tier only)
+    // Webhook routes (Standard + Pro tier)
     #[cfg(feature = "pro")]
     let r = r
         .route("/v1/webhooks", get(list_webhooks))
