@@ -325,6 +325,8 @@ pub async fn run(check_only: bool) -> Result<()> {
 fn detect_platform() -> (&'static str, &'static str) {
     let os = if cfg!(target_os = "macos") {
         "darwin"
+    } else if cfg!(target_os = "windows") {
+        "win"
     } else {
         "linux"
     };
