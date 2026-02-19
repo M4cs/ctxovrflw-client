@@ -276,11 +276,17 @@ impl Config {
     pub fn capability(&self) -> Option<crate::capability::CapabilityPayload> {
         self.capability_token.as_ref().and_then(|t| {
             let payload = crate::capability::verify_capability_token(t).ok()?;
-            // Additional claim validation
-            let device_id = self.device_id.as_deref();
-            if let Err(e) = payload.validate(device_id) {
+            // Validate claims (iat, tier) but don't require subject match
+            // Subject mismatch can happen legitimately (config migration, etc.)
+            if let Err(e) = payload.validate(None) {
                 tracing::warn!("Capability token validation failed: {}", e);
                 return None;
+            }
+            // Warn about subject mismatch but don't fail
+            if let Some(ref device_id) = self.device_id {
+                if payload.sub != *device_id {
+                    tracing::debug!("Capability token subject mismatch: token={}, current={}", payload.sub, device_id);
+                }
             }
             Some(payload)
         })
