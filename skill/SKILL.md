@@ -83,7 +83,7 @@ ctxovrflw update   # Downloads and installs the latest version
 | Context synthesis | ❌ | ❌ | ✅ |
 | Consolidation | ❌ | ❌ | ✅ |
 | Knowledge graph | ❌ | ✅ | ✅ |
-| Webhooks | ❌ | ❌ | ✅ |
+| Webhooks | ❌ | ✅ | ✅ |
 
 ### How to Subscribe
 
@@ -216,7 +216,7 @@ maintenance(action: "run_consolidation_now")
 maintenance(action: "openclaw_schedule_hint")
 ```
 
-## Webhooks (Pro Tier)
+## Webhooks (Standard+ Tier)
 
 Subscribe to memory events:
 
