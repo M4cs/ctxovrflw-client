@@ -69,9 +69,9 @@ pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
             loop {
                 interval.tick().await;
                 match crate::sync::run_silent(&sync_cfg).await {
-                    Ok((pushed, pulled)) => {
-                        if pushed > 0 || pulled > 0 {
-                            tracing::info!("Auto-sync: pushed {pushed}, pulled {pulled}");
+                    Ok((pushed, pulled, pull_purged)) => {
+                        if pushed > 0 || pulled > 0 || pull_purged > 0 {
+                            tracing::info!("Auto-sync: pushed {pushed}, pulled {pulled}, purged {pull_purged}");
                         }
                     }
                     Err(e) => {

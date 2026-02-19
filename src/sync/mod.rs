@@ -24,6 +24,8 @@ struct PullResponse {
     sync_timestamp: String,
     #[serde(default)]
     capability_token: Option<String>,
+    #[serde(default)]
+    purge_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,21 +75,24 @@ pub async fn run(cfg: &Config) -> Result<()> {
     let enc_key = get_encryption_key(cfg)?;
 
     let pushed = push(cfg, api_key, device_id, &enc_key).await?;
-    let pulled = pull(cfg, api_key, device_id, &enc_key).await?;
+    let (pulled, pull_purged) = pull(cfg, api_key, device_id, &enc_key).await?;
     let purged = purge_tombstones()?;
 
     println!("✓ Sync complete — pushed {pushed}, pulled {pulled}");
     if purged > 0 {
         println!("  🗑️  Purged {purged} old tombstones");
     }
+    if pull_purged > 0 {
+        println!("  🧹 Purged {pull_purged} server-acknowledged tombstones");
+    }
     println!("  🔐 End-to-end encrypted");
     Ok(())
 }
 
-/// Run sync silently (for auto-sync in daemon). Returns (pushed, pulled).
-pub async fn run_silent(cfg: &Config) -> Result<(usize, usize)> {
+/// Run sync silently (for auto-sync in daemon). Returns (pushed, pulled, purged_from_pull).
+pub async fn run_silent(cfg: &Config) -> Result<(usize, usize, usize)> {
     if !cfg.is_logged_in() {
-        return Ok((0, 0));
+        return Ok((0, 0, 0));
     }
 
     let api_key = cfg.api_key.as_deref().ok_or_else(|| anyhow::anyhow!("Not logged in — no API key"))?;
@@ -96,15 +101,15 @@ pub async fn run_silent(cfg: &Config) -> Result<(usize, usize)> {
         Ok(key) => key,
         Err(e) => {
             tracing::warn!("Sync skipped: {e}");
-            return Ok((0, 0));
+            return Ok((0, 0, 0));
         }
     };
 
     let pushed = push(cfg, api_key, device_id, &enc_key).await?;
-    let pulled = pull(cfg, api_key, device_id, &enc_key).await?;
+    let (pulled, pull_purged) = pull(cfg, api_key, device_id, &enc_key).await?;
     let _ = purge_tombstones(); // Best-effort cleanup
 
-    Ok((pushed, pulled))
+    Ok((pushed, pulled, pull_purged))
 }
 
 /// Purge tombstones (soft-deleted memories) that have been synced and are older than 7 days.
@@ -113,13 +118,30 @@ pub async fn run_silent(cfg: &Config) -> Result<(usize, usize)> {
 fn purge_tombstones() -> Result<usize> {
     let conn = db::open()?;
 
+    // If too many unsynced tombstones, mark them as synced to unblock push queue
+    let unsynced_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memories WHERE deleted = 1 AND synced_at IS NULL",
+        [],
+        |r| r.get(0),
+    )?;
+    if unsynced_count > 100 {
+        let now = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let _ = conn.execute(
+            "UPDATE memories SET synced_at = ?1 WHERE deleted = 1 AND synced_at IS NULL",
+            rusqlite::params![now],
+        );
+        tracing::warn!("Marked {unsynced_count} unsynced tombstones as synced to unblock push queue");
+    }
+
     // Delete vectors first (FK-like cleanup)
     conn.execute(
         "DELETE FROM memory_vectors WHERE id IN (
             SELECT id FROM memories
             WHERE deleted = 1
-              AND synced_at IS NOT NULL
-              AND updated_at <= datetime('now', '-7 days')
+              AND (
+                (synced_at IS NOT NULL AND updated_at <= datetime('now', '-7 days'))
+                OR (synced_at IS NULL AND updated_at <= datetime('now', '-1 day'))
+              )
         )",
         [],
     )?;
@@ -128,13 +150,15 @@ fn purge_tombstones() -> Result<usize> {
     let purged = conn.execute(
         "DELETE FROM memories
          WHERE deleted = 1
-           AND synced_at IS NOT NULL
-           AND updated_at <= datetime('now', '-7 days')",
+           AND (
+             (synced_at IS NOT NULL AND updated_at <= datetime('now', '-7 days'))
+             OR (synced_at IS NULL AND updated_at <= datetime('now', '-1 day'))
+           )",
         [],
     )?;
 
     if purged > 0 {
-        tracing::info!("Purged {purged} tombstones older than 7 days");
+        tracing::info!("Purged {purged} tombstones (synced>7d or unsynced>1d)");
     }
 
     Ok(purged)
@@ -277,7 +301,7 @@ async fn pull(
     api_key: &str,
     device_id: &str,
     enc_key: &[u8; 32],
-) -> Result<usize> {
+) -> Result<(usize, usize)> {
     let client = reqwest::Client::new();
     let resp = client
         .post(format!("{}/v1/sync/pull", cfg.cloud_url))
@@ -304,12 +328,34 @@ async fn pull(
         cfg.save()?;
     }
 
+    let mut purge_count = 0usize;
+
     if count > 0 {
         let conn = db::open()?;
         merge_remote_memories(&conn, &result.memories, enc_key)?;
     }
 
-    Ok(count)
+    if !result.purge_ids.is_empty() {
+        let conn = db::open()?;
+        for id in &result.purge_ids {
+            let _ = conn.execute(
+                "DELETE FROM memory_vectors WHERE id = ?1",
+                rusqlite::params![id],
+            );
+            let rows = conn.execute(
+                "DELETE FROM memories WHERE id = ?1",
+                rusqlite::params![id],
+            )?;
+            if rows > 0 {
+                purge_count += 1;
+            }
+        }
+        if purge_count > 0 {
+            tracing::info!("Purged {purge_count} server-acknowledged tombstones");
+        }
+    }
+
+    Ok((count, purge_count))
 }
 
 /// Push a single memory to the cloud immediately.
@@ -517,9 +563,22 @@ fn merge_remote_memories(
             continue;
         }
 
-        // If locally deleted, don't resurrect — local deletion wins
+        // If locally deleted, only resurrect if remote is newer (last-write-wins)
         if locally_deleted {
-            continue;
+            let local_updated_at: Option<String> = conn
+                .query_row(
+                    "SELECT updated_at FROM memories WHERE id = ?1",
+                    rusqlite::params![mem.id],
+                    |r| r.get(0),
+                )
+                .ok();
+            if let Some(local_ts) = local_updated_at {
+                if mem.updated_at <= local_ts {
+                    continue;
+                }
+            } else {
+                continue;
+            }
         }
 
         let tags_json = serde_json::to_string(&tags)?;

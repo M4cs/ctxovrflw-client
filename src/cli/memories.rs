@@ -423,14 +423,18 @@ fn handle_list_key(app: &mut App, key: KeyEvent, conn: &Connection, cfg: &Config
             let _ = enable_raw_mode();
 
             match sync_result {
-                Ok((pushed, pulled)) => {
+                Ok((pushed, pulled, pull_purged)) => {
                     // Reload memories from DB to reflect sync changes
                     if let Ok(fresh) = load_memories(conn) {
                         app.memories = fresh;
                         app.recalc_counts();
                         app.apply_filters();
                     }
-                    app.status_msg = Some(format!("Sync complete — pushed {pushed}, pulled {pulled}"));
+                    if pull_purged > 0 {
+                        app.status_msg = Some(format!("Sync complete — pushed {pushed}, pulled {pulled}, purged {pull_purged}"));
+                    } else {
+                        app.status_msg = Some(format!("Sync complete — pushed {pushed}, pulled {pulled}"));
+                    }
                 }
                 Err(e) => {
                     app.status_msg = Some(format!("Sync failed: {e}"));
