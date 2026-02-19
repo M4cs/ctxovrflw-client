@@ -701,6 +701,7 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     let limit = args["limit"].as_u64().unwrap_or(5) as usize;
     let max_tokens = args["max_tokens"].as_u64().map(|t| t as usize);
     let subject_filter = args["subject"].as_str();
+    let agent_id_filter = args["agent_id"].as_str();
 
     // Sync happens on its own schedule (auto-sync daemon task).
     // Don't trigger a full sync before every recall — it adds latency.
@@ -763,6 +764,35 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
             let line = format!(
                 "- [{}] ({}{}){} {}\n",
                 memory.id, memory.memory_type, score_str,
+                memory.subject.as_deref().map(|s| format!(" [{}]", s)).unwrap_or_default(),
+                memory.content,
+            );
+            let line_tokens = line.len() / 4;
+            if let Some(budget) = max_tokens {
+                if token_count + line_tokens > budget { break; }
+            }
+            token_count += line_tokens;
+            text.push_str(&line);
+        }
+        return Ok(json!({
+            "content": [{ "type": "text", "text": text }]
+        }));
+    }
+
+    // Agent-scoped search
+    if let Some(agent_id) = agent_id_filter {
+        let memories = db::search::by_agent(&conn, agent_id, limit)?;
+        if memories.is_empty() {
+            return Ok(json!({
+                "content": [{ "type": "text", "text": format!("No memories found for agent: {agent_id}") }]
+            }));
+        }
+        let mut text = format!("Memories from agent '{agent_id}':\n\n");
+        let mut token_count = 0usize;
+        for memory in &memories {
+            let line = format!(
+                "- [{}] ({}){} {}\n",
+                memory.id, memory.memory_type,
                 memory.subject.as_deref().map(|s| format!(" [{}]", s)).unwrap_or_default(),
                 memory.content,
             );

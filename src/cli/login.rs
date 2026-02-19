@@ -392,6 +392,13 @@ async fn setup_sync_pin(cfg: &Config) -> Result<()> {
         }
 
         let result: PinActionResponse = setup_resp.json().await?;
+        
+        // Validate response fields
+        if result.ok != Some(true) {
+            let err_msg = result.error.unwrap_or_else(|| "PIN setup failed".to_string());
+            anyhow::bail!("Server rejected PIN setup: {}", err_msg);
+        }
+        
         let key_salt = result.key_salt.ok_or_else(|| anyhow::anyhow!("Server didn't return salt"))?;
 
         // Derive key CLIENT-SIDE — PIN never leaves this device

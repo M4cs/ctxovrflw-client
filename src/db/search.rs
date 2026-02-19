@@ -514,6 +514,34 @@ pub fn by_subject(conn: &Connection, subject: &str, limit: usize) -> Result<Vec<
     Ok(results)
 }
 
+/// Search by agent_id
+pub fn by_agent(conn: &Connection, agent_id: &str, limit: usize) -> Result<Vec<Memory>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, content, type, tags, subject, source, agent_id, expires_at, created_at, updated_at
+         FROM memories WHERE agent_id = ?1 AND deleted = 0
+         AND (expires_at IS NULL OR expires_at > datetime('now'))
+         ORDER BY updated_at DESC LIMIT ?2",
+    )?;
+
+    let results = stmt
+        .query_map(params![agent_id, limit], |row| {
+            Ok(Memory {
+                id: row.get(0)?,
+                content: row.get(1)?,
+                memory_type: row.get::<_, String>(2)?.parse().unwrap_or_default(),
+                tags: serde_json::from_str(&row.get::<_, String>(3)?).unwrap_or_default(),
+                subject: row.get(4)?,
+                source: row.get(5)?,
+                agent_id: row.get(6)?,
+                expires_at: row.get(7)?,
+                created_at: row.get(8)?,
+                updated_at: row.get(9)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(results)
+}
+
 /// List all distinct subjects
 pub fn list_subjects(conn: &Connection) -> Result<Vec<(String, usize)>> {
     let mut stmt = conn.prepare(

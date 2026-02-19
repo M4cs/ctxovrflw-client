@@ -258,6 +258,16 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
         return Json(json!({ "ok": true, "results": results_json, "search_method": "subject" }));
     }
 
+    // Agent-scoped search
+    if let Some(ref agent) = body.agent_id {
+        let memories = db::search::by_agent(&conn, agent, body.limit).unwrap_or_default();
+        let results_json: Vec<Value> = memories
+            .iter()
+            .map(|memory| json!({ "memory": memory, "score": 1.0 }))
+            .collect();
+        return Json(json!({ "ok": true, "results": results_json, "search_method": "agent" }));
+    }
+
     let fetch_limit = if body.max_tokens.is_some() { body.limit.max(20) } else { body.limit };
 
     let forced_method = body.search_method.as_deref();

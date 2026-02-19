@@ -275,7 +275,14 @@ impl Config {
     /// Verify and decode the capability token, if present and valid.
     pub fn capability(&self) -> Option<crate::capability::CapabilityPayload> {
         self.capability_token.as_ref().and_then(|t| {
-            crate::capability::verify_capability_token(t).ok()
+            let payload = crate::capability::verify_capability_token(t).ok()?;
+            // Additional claim validation
+            let device_id = self.device_id.as_deref();
+            if let Err(e) = payload.validate(device_id) {
+                tracing::warn!("Capability token validation failed: {}", e);
+                return None;
+            }
+            Some(payload)
         })
     }
 

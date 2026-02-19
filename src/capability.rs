@@ -28,6 +28,41 @@ impl CapabilityPayload {
     pub fn has_feature(&self, feature: &str) -> bool {
         self.features.iter().any(|f| f == feature)
     }
+
+    /// Validate token claims
+    /// - iat: issued at should not be in the future or too old (>90 days)
+    /// - sub: should match expected subject if provided
+    pub fn validate(&self, expected_sub: Option<&str>) -> Result<(), String> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        // Check iat is not in the future
+        if self.iat > now + 60 { // Allow 60s clock skew
+            return Err("Token issued in the future".into());
+        }
+        
+        // Check iat is not too old (90 days)
+        const MAX_TOKEN_AGE: u64 = 90 * 24 * 60 * 60;
+        if now.saturating_sub(self.iat) > MAX_TOKEN_AGE {
+            return Err("Token too old (>90 days)".into());
+        }
+        
+        // Check subject matches if expected_sub provided
+        if let Some(expected) = expected_sub {
+            if self.sub != expected {
+                return Err(format!("Subject mismatch: got {}, expected {}", self.sub, expected));
+            }
+        }
+        
+        // Check tier is valid
+        if !["free", "standard", "pro"].contains(&self.tier.as_str()) {
+            return Err(format!("Invalid tier in token: {}", self.tier));
+        }
+        
+        Ok(())
+    }
 }
 
 /// Verify and decode a capability token.
