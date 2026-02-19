@@ -629,11 +629,7 @@ pub(crate) fn install_agent_skill() -> Result<bool> {
     std::fs::create_dir_all(&skill_dir)?;
     std::fs::write(skill_dir.join("SKILL.md"), SKILL_MD)?;
 
-    println!(
-        "  {} Agent Skill installed {}",
-        style("✓").green().bold(),
-        style(format!("→ {}", skill_dir.display())).dim()
-    );
+    // Success is handled by caller (TUI or CLI)
     Ok(true)
 }
 
@@ -1236,10 +1232,6 @@ pub(crate) fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
             // Already present — update in place
             let updated = replace_ctxovrflw_section(&content, OPENCLAW_AGENTS_SECTION);
             std::fs::write(path, updated)?;
-            println!(
-                "  {} AGENTS.md — ctxovrflw section updated",
-                style("✓").green().bold()
-            );
         } else {
             // Find the right place to inject: after ## Memory section if it exists, 
             // or before ## Safety, or at the end
@@ -1275,10 +1267,6 @@ pub(crate) fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
             }
 
             std::fs::write(path, content)?;
-            println!(
-                "  {} AGENTS.md — ctxovrflw memory section injected",
-                style("✓").green().bold()
-            );
         }
     } else {
         // No AGENTS.md — create a minimal one
@@ -1290,10 +1278,6 @@ pub(crate) fn inject_openclaw_agents_md(path: &PathBuf) -> Result<()> {
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(path, content)?;
-        println!(
-            "  {} AGENTS.md created with ctxovrflw memory config",
-            style("✓").green().bold()
-        );
     }
 
     Ok(())
