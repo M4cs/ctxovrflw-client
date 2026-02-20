@@ -23,13 +23,19 @@ pub struct Memory {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum MemoryType {
     #[default]
     Semantic,
     Episodic,
     Procedural,
     Preference,
+    /// Agent-specific personality traits and preferences
+    AgentPersonality,
+    /// Agent-specific response patterns and rules
+    AgentRules,
+    /// Agent-private channel - only visible to specific agent
+    ChannelPrivate,
 }
 
 impl std::fmt::Display for MemoryType {
@@ -39,6 +45,9 @@ impl std::fmt::Display for MemoryType {
             MemoryType::Episodic => write!(f, "episodic"),
             MemoryType::Procedural => write!(f, "procedural"),
             MemoryType::Preference => write!(f, "preference"),
+            MemoryType::AgentPersonality => write!(f, "agent_personality"),
+            MemoryType::AgentRules => write!(f, "agent_rules"),
+            MemoryType::ChannelPrivate => write!(f, "channel_private"),
         }
     }
 }
@@ -51,6 +60,9 @@ impl std::str::FromStr for MemoryType {
             "episodic" => Ok(MemoryType::Episodic),
             "procedural" => Ok(MemoryType::Procedural),
             "preference" => Ok(MemoryType::Preference),
+            "agent_personality" | "agentpersonality" => Ok(MemoryType::AgentPersonality),
+            "agent_rules" | "agentrules" => Ok(MemoryType::AgentRules),
+            "channel_private" | "channelprivate" | "private" => Ok(MemoryType::ChannelPrivate),
             _ => anyhow::bail!("Unknown memory type: {s}"),
         }
     }

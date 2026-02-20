@@ -542,6 +542,22 @@ pub fn by_agent(conn: &Connection, agent_id: &str, limit: usize) -> Result<Vec<M
     Ok(results)
 }
 
+/// Filter out ChannelPrivate memories not belonging to the requesting agent.
+/// ChannelPrivate memories are only visible to the agent_id that stored them.
+pub fn filter_channel_private(results: Vec<(Memory, f64)>, requesting_agent: Option<&str>) -> Vec<(Memory, f64)> {
+    results.into_iter().filter(|(mem, _)| {
+        if matches!(mem.memory_type, super::memories::MemoryType::ChannelPrivate) {
+            // Only include if the requesting agent matches the stored agent_id
+            match (requesting_agent, &mem.agent_id) {
+                (Some(req), Some(stored)) => req == stored,
+                _ => false, // No agent_id → hide private memories
+            }
+        } else {
+            true // Non-private memories pass through
+        }
+    }).collect()
+}
+
 /// List all distinct subjects
 pub fn list_subjects(conn: &Connection) -> Result<Vec<(String, usize)>> {
     let mut stmt = conn.prepare(

@@ -106,6 +106,41 @@ pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
         }
     });
 
+    // Adaptive scoring maintenance task — importance scores + recall log cleanup
+    let maintenance_handle = tokio::spawn(async {
+        // Update importance scores every hour
+        let mut score_interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        score_interval.tick().await; // skip first immediate tick
+
+        // Cleanup old recall logs every 24 hours
+        let mut cleanup_counter: u64 = 0;
+
+        loop {
+            score_interval.tick().await;
+            cleanup_counter += 1;
+
+            // Update importance scores (hourly)
+            match crate::maintenance::update_importance_scores() {
+                Ok(count) if count > 0 => {
+                    tracing::info!("Maintenance: updated importance scores for {count} memories");
+                }
+                Err(e) => tracing::warn!("Maintenance: importance score update failed: {e}"),
+                _ => {}
+            }
+
+            // Cleanup old recall logs (every 24 ticks = 24 hours)
+            if cleanup_counter % 24 == 0 {
+                match crate::maintenance::cleanup_recall_logs() {
+                    Ok(count) if count > 0 => {
+                        tracing::info!("Maintenance: cleaned up {count} old recall logs");
+                    }
+                    Err(e) => tracing::warn!("Maintenance: recall log cleanup failed: {e}"),
+                    _ => {}
+                }
+            }
+        }
+    });
+
     // Background consolidation task (Pro feature)
     let consolidation_handle = if cfg.feature_enabled("consolidation") && cfg.auto_consolidation {
         let interval_secs = cfg.consolidation_interval_secs.max(300);
@@ -147,6 +182,7 @@ pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
     if cfg.auto_sync && cfg.is_logged_in() {
         println!("  Sync:     every {}s", cfg.sync_interval_secs);
     }
+    println!("  Maintenance: importance scores hourly, log cleanup daily");
     if cfg.feature_enabled("consolidation") && cfg.auto_consolidation {
         println!("  Consolidation: every {}s", cfg.consolidation_interval_secs.max(300));
     }
@@ -158,6 +194,7 @@ pub async fn start(cfg: &Config, port: u16, foreground: bool) -> Result<()> {
     let _ = std::fs::remove_file(&pid_path);
     http_handle.abort();
     cleanup_handle.abort();
+    maintenance_handle.abort();
     if let Some(h) = sync_handle {
         h.abort();
     }

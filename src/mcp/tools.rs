@@ -23,8 +23,8 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
                     },
                     "type": {
                         "type": "string",
-                        "enum": ["semantic", "episodic", "procedural", "preference"],
-                        "description": "Memory type. semantic=facts/knowledge, episodic=events/experiences, procedural=how-to/steps, preference=likes/dislikes/config",
+                        "enum": ["semantic", "episodic", "procedural", "preference", "agent_personality", "agent_rules", "channel_private"],
+                        "description": "Memory type. semantic=facts/knowledge, episodic=events/experiences, procedural=how-to/steps, preference=likes/dislikes/config, agent_personality=agent traits/persona, agent_rules=agent response patterns, channel_private=private to this agent only",
                         "default": "semantic"
                     },
                     "tags": {
@@ -468,6 +468,26 @@ pub fn list_tools(cfg: &Config) -> Vec<Value> {
                 }
             }
         }));
+
+        tools.push(json!({
+            "name": "get_personality",
+            "description": "Retrieve this agent's synthesized personality profile based on its stored agent_personality memories, agent_rules, and recall patterns. Returns personality traits, rules, and a rehydration context for maintaining consistent agent behavior across sessions.\n\nPro tier only.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "agent_id": {
+                        "type": "string",
+                        "description": "The agent ID to retrieve personality for (e.g., 'aldous', 'cursor', 'claude-code')"
+                    },
+                    "max_tokens": {
+                        "type": "integer",
+                        "description": "Max tokens for the personality profile (default 1500)",
+                        "default": 1500
+                    }
+                },
+                "required": ["agent_id"]
+            }
+        }));
     }
 
     tools
@@ -502,6 +522,7 @@ pub async fn call_tool(cfg: &Config, params: &Value) -> Result<Value> {
     #[cfg(feature = "pro")]
     match tool_name {
         "context" => return handle_context(cfg, arguments).await,
+        "get_personality" => return handle_get_personality(cfg, arguments).await,
         "manage_webhooks" => return handle_manage_webhooks(arguments).await,
         "consolidate" => return handle_consolidate(cfg, arguments).await,
         "maintenance" => return handle_maintenance(cfg, arguments).await,
@@ -757,6 +778,11 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
             }));
         }
 
+        // Log recalls for subject search
+        for (memory, _) in &all_memories {
+            let _ = db::recall::log_recall(&conn, &memory.id, agent_id_filter, Some(subj), None);
+        }
+
         let mut text = format!("Memories about '{subj}':\n\n");
         let mut token_count = 0usize;
         for (memory, score) in &all_memories {
@@ -786,6 +812,10 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
             return Ok(json!({
                 "content": [{ "type": "text", "text": format!("No memories found for agent: {agent_id}") }]
             }));
+        }
+        // Log recalls for agent search
+        for memory in &memories {
+            let _ = db::recall::log_recall(&conn, &memory.id, Some(agent_id), Some(query), None);
         }
         let mut text = format!("Memories from agent '{agent_id}':\n\n");
         let mut token_count = 0usize;
@@ -841,6 +871,9 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     } else {
         (db::search::keyword_search(&conn, query, fetch_limit)?, SearchMethod::Keyword)
     };
+
+    // Filter out ChannelPrivate memories not belonging to the requesting agent
+    let results = db::search::filter_channel_private(results, agent_id_filter);
 
     if results.is_empty() {
         return Ok(json!({
@@ -947,6 +980,11 @@ async fn handle_recall(cfg: &Config, args: &Value) -> Result<Value> {
     if matches!(cfg.tier, Tier::Pro) {
         text.push_str("\n--- Pro Workflow Tip ---\n");
         text.push_str("To keep memory quality high while working: run `maintenance` with action `run_consolidation_now` after major recall sessions, and use `maintenance` with `openclaw_schedule_hint` to set autonomous OpenClaw cron workflows.\n");
+    }
+
+    // Log recalls for main search
+    for (memory, score) in &results {
+        let _ = db::recall::log_recall(&conn, &memory.id, None, Some(query), Some(*score));
     }
 
     Ok(json!({
@@ -1306,6 +1344,8 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
         let mut facts: Vec<&str> = Vec::new();
         let mut procedures: Vec<&str> = Vec::new();
         let mut events: Vec<&str> = Vec::new();
+        let mut personality: Vec<&str> = Vec::new();
+        let mut rules: Vec<&str> = Vec::new();
 
         for mem in mems {
             match mem.memory_type {
@@ -1313,6 +1353,9 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
                 db::memories::MemoryType::Semantic => facts.push(&mem.content),
                 db::memories::MemoryType::Procedural => procedures.push(&mem.content),
                 db::memories::MemoryType::Episodic => events.push(&mem.content),
+                db::memories::MemoryType::AgentPersonality => personality.push(&mem.content),
+                db::memories::MemoryType::AgentRules => rules.push(&mem.content),
+                db::memories::MemoryType::ChannelPrivate => {} // Skip private in shared context
             }
         }
 
@@ -1321,6 +1364,8 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
             ("Facts", &facts),
             ("Procedures", &procedures),
             ("Events", &events),
+            ("Agent Personality", &personality),
+            ("Agent Rules", &rules),
         ] {
             if items.is_empty() || token_count >= max_tokens { continue; }
             let sub = format!("**{}:** ", label);
@@ -1364,6 +1409,126 @@ async fn handle_context(cfg: &Config, args: &Value) -> Result<Value> {
 
     Ok(json!({
         "content": [{ "type": "text", "text": briefing }]
+    }))
+}
+
+#[cfg(feature = "pro")]
+async fn handle_get_personality(cfg: &Config, args: &Value) -> Result<Value> {
+    if !cfg.feature_enabled("context_synthesis") {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": "Personality synthesis requires Pro tier ($20/mo). Upgrade at https://ctxovrflw.dev/pricing" }]
+        }));
+    }
+
+    let agent_id = args["agent_id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("agent_id is required"))?;
+    let max_tokens = args["max_tokens"].as_u64().unwrap_or(1500) as usize;
+
+    let conn = db::open()?;
+
+    // 1. Gather agent_personality memories for this agent
+    let mut personality_mems: Vec<db::memories::Memory> = Vec::new();
+    let mut rules_mems: Vec<db::memories::Memory> = Vec::new();
+    let mut private_mems: Vec<db::memories::Memory> = Vec::new();
+
+    let agent_memories = db::search::by_agent(&conn, agent_id, 100)?;
+    for mem in agent_memories {
+        match mem.memory_type {
+            db::memories::MemoryType::AgentPersonality => personality_mems.push(mem),
+            db::memories::MemoryType::AgentRules => rules_mems.push(mem),
+            db::memories::MemoryType::ChannelPrivate => private_mems.push(mem),
+            _ => {}
+        }
+    }
+
+    // 2. Get importance-weighted memories for this agent
+    let important_ids = db::recall::get_important_memories(&conn, Some(agent_id), 20)?;
+    let mut important_mems: Vec<db::memories::Memory> = Vec::new();
+    for id in &important_ids {
+        if let Some(mem) = db::memories::get(&conn, id)? {
+            // Skip types already collected
+            if !matches!(mem.memory_type, db::memories::MemoryType::AgentPersonality | db::memories::MemoryType::AgentRules | db::memories::MemoryType::ChannelPrivate) {
+                important_mems.push(mem);
+            }
+        }
+    }
+
+    // 3. Get rehydration candidates
+    let rehydration = db::recall::get_rehydration_candidates(&conn, &[], 10)?;
+    let mut rehydration_mems: Vec<(db::memories::Memory, f64)> = Vec::new();
+    for (id, importance) in &rehydration {
+        if let Some(mem) = db::memories::get(&conn, id)? {
+            rehydration_mems.push((mem, *importance));
+        }
+    }
+
+    if personality_mems.is_empty() && rules_mems.is_empty() && important_mems.is_empty() {
+        return Ok(json!({
+            "content": [{ "type": "text", "text": format!("No personality data found for agent '{agent_id}'. Store memories with type 'agent_personality' or 'agent_rules' to build a profile.") }]
+        }));
+    }
+
+    // 4. Build the personality profile
+    let mut profile = format!("# Agent Profile: {agent_id}\n\n");
+    let mut token_count = profile.len() / 4;
+
+    if !personality_mems.is_empty() {
+        profile.push_str("## Personality Traits\n");
+        token_count += 5;
+        for mem in &personality_mems {
+            let line = format!("- {}\n", mem.content);
+            if token_count + line.len() / 4 > max_tokens { break; }
+            profile.push_str(&line);
+            token_count += line.len() / 4;
+        }
+        profile.push('\n');
+    }
+
+    if !rules_mems.is_empty() && token_count < max_tokens {
+        profile.push_str("## Response Rules\n");
+        token_count += 5;
+        for mem in &rules_mems {
+            let line = format!("- {}\n", mem.content);
+            if token_count + line.len() / 4 > max_tokens { break; }
+            profile.push_str(&line);
+            token_count += line.len() / 4;
+        }
+        profile.push('\n');
+    }
+
+    if !important_mems.is_empty() && token_count < max_tokens {
+        profile.push_str("## Frequently Recalled Context\n");
+        token_count += 8;
+        for mem in &important_mems {
+            let line = format!("- ({}) {}\n", mem.memory_type, mem.content);
+            if token_count + line.len() / 4 > max_tokens { break; }
+            profile.push_str(&line);
+            token_count += line.len() / 4;
+        }
+        profile.push('\n');
+    }
+
+    if !rehydration_mems.is_empty() && token_count < max_tokens {
+        profile.push_str("## Rehydration Candidates (decayed but important)\n");
+        token_count += 12;
+        for (mem, importance) in &rehydration_mems {
+            let line = format!("- [importance: {:.1}] ({}) {}\n", importance, mem.memory_type, mem.content);
+            if token_count + line.len() / 4 > max_tokens { break; }
+            profile.push_str(&line);
+            token_count += line.len() / 4;
+        }
+        profile.push('\n');
+    }
+
+    let footer = format!(
+        "---\n*{} personality, {} rules, {} important, {} rehydration — ~{} tokens*",
+        personality_mems.len(), rules_mems.len(), important_mems.len(), rehydration_mems.len(), token_count
+    );
+    profile.push_str(&footer);
+
+    Ok(json!({
+        "content": [{ "type": "text", "text": profile }]
     }))
 }
 
@@ -1765,6 +1930,24 @@ async fn handle_maintenance(cfg: &Config, args: &Value) -> Result<Value> {
                 }]
             }))
         }
+        "update_importance_scores" => {
+            let updated = crate::maintenance::update_importance_scores()?;
+            Ok(json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("Updated importance scores for {} memories based on recall patterns.", updated)
+                }]
+            }))
+        }
+        "cleanup_recall_logs" => {
+            let deleted = crate::maintenance::cleanup_recall_logs()?;
+            Ok(json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("Cleaned up {} old recall logs (90+ days old).", deleted)
+                }]
+            }))
+        }
         "openclaw_schedule_hint" => {
             let home = std::env::var("HOME").unwrap_or_default();
             let openclaw_workspace_exists = std::path::Path::new(&home).join(".openclaw/workspace").exists();
@@ -1779,7 +1962,7 @@ async fn handle_maintenance(cfg: &Config, args: &Value) -> Result<Value> {
             }))
         }
         _ => Ok(json!({
-            "content": [{ "type": "text", "text": "Unknown action. Use: run_consolidation_now or openclaw_schedule_hint" }],
+            "content": [{ "type": "text", "text": "Unknown action. Use: run_consolidation_now, update_importance_scores, cleanup_recall_logs, or openclaw_schedule_hint" }],
             "isError": true
         })),
     }

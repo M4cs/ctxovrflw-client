@@ -1,5 +1,6 @@
 pub mod graph;
 pub mod memories;
+pub mod recall;
 pub mod search;
 #[cfg(feature = "pro")]
 pub mod webhooks;
@@ -135,6 +136,34 @@ fn migrate(conn: &Connection) -> Result<()> {
             embedding float[{dim}]
         );"
     ))?;
+
+    // Recall logs for importance scoring (Phase 2: Adaptive Scoring)
+    conn.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS recall_logs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            memory_id   TEXT NOT NULL,
+            agent_id    TEXT,
+            query       TEXT,
+            score       REAL,
+            recalled_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_recall_logs_memory_id ON recall_logs(memory_id);
+        CREATE INDEX IF NOT EXISTS idx_recall_logs_agent_id ON recall_logs(agent_id);
+        CREATE INDEX IF NOT EXISTS idx_recall_logs_recalled_at ON recall_logs(recalled_at);
+        
+        -- Importance scores cache (updated periodically)
+        CREATE TABLE IF NOT EXISTS memory_scores (
+            memory_id       TEXT PRIMARY KEY,
+            recall_count    INTEGER NOT NULL DEFAULT 0,
+            last_recalled   TEXT,
+            decay_factor    REAL NOT NULL DEFAULT 1.0,
+            importance      REAL NOT NULL DEFAULT 0.0,
+            updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_scores_importance ON memory_scores(importance DESC);
+        "
+    )?;
 
     Ok(())
 }

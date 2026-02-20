@@ -251,6 +251,10 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
     // Subject-scoped search
     if let Some(ref subj) = body.subject {
         let memories = db::search::by_subject(&conn, subj, body.limit).unwrap_or_default();
+        // Log recalls
+        for memory in &memories {
+            let _ = db::recall::log_recall(&conn, &memory.id, body.agent_id.as_deref(), Some(subj), Some(1.0));
+        }
         let results_json: Vec<Value> = memories
             .iter()
             .map(|memory| json!({ "memory": memory, "score": 1.0 }))
@@ -261,6 +265,10 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
     // Agent-scoped search
     if let Some(ref agent) = body.agent_id {
         let memories = db::search::by_agent(&conn, agent, body.limit).unwrap_or_default();
+        // Log recalls
+        for memory in &memories {
+            let _ = db::recall::log_recall(&conn, &memory.id, Some(agent), None, Some(1.0));
+        }
         let results_json: Vec<Value> = memories
             .iter()
             .map(|memory| json!({ "memory": memory, "score": 1.0 }))
@@ -336,6 +344,9 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
         }
     };
 
+    // Filter out ChannelPrivate memories not belonging to the requesting agent
+    let results = db::search::filter_channel_private(results, body.agent_id.as_deref());
+
     // Apply token budget if specified
     let filtered: Vec<&(db::memories::Memory, f64)> = if let Some(budget) = body.max_tokens {
         let mut token_count = 0usize;
@@ -349,9 +360,26 @@ async fn recall(State(state): State<AppState>, Json(body): Json<RecallRequest>) 
         results.iter().take(body.limit).collect()
     };
 
+    // Log recalls for importance tracking (Phase 2: Adaptive Scoring)
+    let agent_id = body.agent_id.as_deref();
+    for (memory, score) in &filtered {
+        let _ = db::recall::log_recall(&conn, &memory.id, agent_id, Some(&body.query), Some(*score));
+    }
+
     let results_json: Vec<Value> = filtered
         .iter()
-        .map(|(memory, score)| json!({ "memory": memory, "score": score }))
+        .map(|(memory, score)| {
+            let importance = db::recall::get_agent_importance(
+                &conn,
+                &memory.id,
+                body.agent_id.as_deref().unwrap_or(""),
+            ).unwrap_or(1.0);
+            let mut entry = json!({ "memory": memory, "score": score });
+            if importance > 1.0 {
+                entry["importance"] = json!(importance);
+            }
+            entry
+        })
         .collect();
 
     Json(json!({ "ok": true, "results": results_json, "search_method": method.to_string() }))

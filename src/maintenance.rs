@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::collections::HashMap;
+use tracing;
 
 use crate::db;
 
@@ -54,4 +55,21 @@ pub fn run_consolidation_pass() -> Result<ConsolidationReport> {
     }
 
     Ok(report)
+}
+
+/// Update importance scores for all memories based on recall patterns
+/// Call this periodically (e.g., hourly) to keep scores fresh
+pub fn update_importance_scores() -> Result<usize> {
+    let conn = db::open()?;
+    let updated = db::recall::update_importance_scores(&conn)?;
+    tracing::info!("Updated importance scores for {} memories", updated);
+    Ok(updated)
+}
+
+/// Clean old recall logs (keep 90 days)
+pub fn cleanup_recall_logs() -> Result<usize> {
+    let conn = db::open()?;
+    let deleted = db::recall::cleanup_old_logs(&conn)?;
+    tracing::info!("Cleaned up {} old recall logs", deleted);
+    Ok(deleted)
 }
